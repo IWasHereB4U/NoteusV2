@@ -77,10 +77,12 @@ function ColorPickerField({ value, onChange, presets = [] }) {
   );
 }
 
-export function Modal({ title, onClose, children, footer }) {
+// `width` widens the dialog for list-style modals (the default 520px suits
+// a short form).
+export function Modal({ title, onClose, children, footer, width }) {
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+      <div className="modal" style={width ? { maxWidth: width } : undefined}>
         <div className="modal-h">
           <h3>{title}</h3>
           <button onClick={onClose} aria-label="Close">×</button>

@@ -17,6 +17,7 @@ import { FilingDesk } from './pages/FilingDesk.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { Circle } from './pages/Circle.jsx';
 import { Notes } from './pages/Notes.jsx';
+import { NoteTags } from './pages/NoteTags.jsx';
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/circle" element={<Circle />} />
             <Route path="/notes" element={<Notes />} />
+            <Route path="/note-tags" element={<NoteTags />} />
           </Route>
         </Routes>
         </YardProvider>

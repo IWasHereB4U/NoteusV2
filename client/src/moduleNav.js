@@ -14,6 +14,7 @@ export const NAV_ITEMS = [
   { to: '/calendar', label: 'Calendar', icon: '▧', key: 'calendar' },
   { to: '/filing', label: 'Filing desk', icon: '▦', key: 'filing' },
   { to: '/notes', label: 'Notes', icon: '✎', key: 'notes' },
+  { to: '/note-tags', label: 'Note Tag', icon: '#', key: 'notetags' },
 ];
 
 // Longest-prefix match so nested routes (e.g. a note card's own URL under

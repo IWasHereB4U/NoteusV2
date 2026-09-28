@@ -15,6 +15,7 @@ const MODULES = [
   ['calendar', 'Calendar'],
   ['filing', 'Filing desk'],
   ['notes', 'Notes'],
+  ['notetags', 'Note Tag'],
 ];
 
 export function Circle() {

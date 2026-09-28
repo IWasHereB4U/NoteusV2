@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { FormModal } from '../components/Modal.jsx';
+import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
+import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
+import { ChecklistView } from '../components/tasks/Checklist.jsx';
+import { cloneFresh, countItems, toggleItem } from '../components/tasks/checklist.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
@@ -22,25 +25,14 @@ function cmpDue(a, b) {
 export function Tasks() {
   const { items, reload, viewingId } = useResource('/tasks');
   const { items: clients } = useResource('/clients');
+  const { items: instances, reload: reloadInstances } = useResource('/task-instances');
   const { viewingSelf } = useAuth();
   const [editing, setEditing] = useState(null);
+  const [showInstances, setShowInstances] = useState(false);
   const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
-
-  const FIELDS = useMemo(
-    () => [
-      { k: 'title', label: 'Task', required: true },
-      {
-        k: 'clientId',
-        label: 'Client (optional)',
-        type: 'select',
-        half: true,
-        options: [['', 'No client — general task'], ...clients.map((c) => [c._id, c.name])],
-      },
-      { k: 'due', label: 'Due date', type: 'date', half: true },
-      { k: 'priority', label: 'Priority', type: 'select', options: [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], half: true },
-    ],
-    [clients]
-  );
+  const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist open
+  // Checklist ticks show instantly; the saved copy replaces this on reload.
+  const [checklistOverrides, setChecklistOverrides] = useState({});
 
   const groups = useMemo(() => {
     const clientName = Object.fromEntries(clients.map((c) => [c._id, c.name]));
@@ -65,8 +57,7 @@ export function Tasks() {
     return groupList;
   }, [items, clients, sortMode]);
 
-  async function save(values) {
-    const payload = { ...values, clientId: values.clientId || null };
+  async function save(payload) {
     if (editing?._id) await api.put(`/tasks/${editing._id}`, payload, viewingId || undefined);
     else await api.post('/tasks', payload, viewingId || undefined);
     await reload();
@@ -84,11 +75,77 @@ export function Tasks() {
     reload();
   }
 
+  function checklistOf(t) {
+    return checklistOverrides[t._id] || t.checklist || [];
+  }
+
+  async function toggleChecklistItem(t, itemId) {
+    if (!viewingSelf) return;
+    const next = toggleItem(checklistOf(t), itemId);
+    setChecklistOverrides((o) => ({ ...o, [t._id]: next }));
+    try {
+      await api.put(`/tasks/${t._id}`, { checklist: next }, viewingId || undefined);
+      await reload();
+    } finally {
+      setChecklistOverrides(({ [t._id]: _, ...rest }) => rest);
+    }
+  }
+
+  function toggleExpanded(id) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  // --- Task instances -------------------------------------------------
+  async function createInstance(values) {
+    await api.post('/task-instances', values, viewingId || undefined);
+    await reloadInstances();
+  }
+
+  async function updateInstance(id, values) {
+    await api.put(`/task-instances/${id}`, values, viewingId || undefined);
+    await reloadInstances();
+  }
+
+  async function deleteInstance(inst) {
+    if (!confirm(`Delete the task instance "${inst.name}"? Tasks already created from it are kept.`)) return;
+    await api.del(`/task-instances/${inst._id}`, viewingId || undefined);
+    await reloadInstances();
+  }
+
+  // Drops an independent copy of the instance onto the task list: same
+  // name/link/note, and the checklist copied with new item ids and every
+  // box unticked. Editing the task afterwards never touches the instance.
+  async function useInstance(inst) {
+    await api.post(
+      '/tasks',
+      {
+        title: inst.name,
+        link: inst.link || '',
+        note: inst.note || '',
+        checklist: cloneFresh(inst.checklist),
+        clientId: null,
+        priority: 'normal',
+        fromInstance: inst._id,
+      },
+      viewingId || undefined
+    );
+    await reload();
+  }
+
   return (
     <main className="page">
       <div className="page-head">
         <div><div className="eyebrow">To do</div><h1>Tasks</h1></div>
-        {viewingSelf && <button className="btn" onClick={() => setEditing({})}>Add task</button>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn ghost" onClick={() => setShowInstances(true)}>
+            Task instances{instances.length ? ` (${instances.length})` : ''}
+          </button>
+          {viewingSelf && <button className="btn" onClick={() => setEditing({})}>Add task</button>}
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -108,23 +165,65 @@ export function Tasks() {
                 <span style={{ fontSize: 11.5, color: 'var(--ink3)' }}>{g.tasks.length}</span>
               </div>
               <div className="stack">
-                {g.tasks.map((t) => (
-                  <div key={t._id} className="row" style={{ gridTemplateColumns: '24px 1fr auto auto' }}>
-                    <input type="checkbox" checked={t.done} disabled={!viewingSelf} onChange={() => toggle(t)} />
-                    <div style={{ textDecoration: t.done ? 'line-through' : 'none', color: t.done ? 'var(--ink3)' : 'var(--ink)' }}>
-                      {t.title}
-                    </div>
-                    <span className={`tag ${t.priority === 'high' ? 'rose' : t.priority === 'low' ? 'green' : 'ochre'}`}>
-                      {t.priority}{t.due ? ` · ${t.due}` : ''}
-                    </span>
-                    {viewingSelf && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn ghost sm" onClick={() => setEditing(t)}>Edit</button>
-                        <button className="btn danger sm" onClick={() => remove(t._id)}>Delete</button>
+                {g.tasks.map((t) => {
+                  const checklist = checklistOf(t);
+                  const { total, done } = countItems(checklist);
+                  const isOpen = expanded.has(t._id);
+                  return (
+                    <div key={t._id}>
+                      <div className="row" style={{ gridTemplateColumns: '24px 1fr auto auto' }}>
+                        <input type="checkbox" checked={t.done} disabled={!viewingSelf} onChange={() => toggle(t)} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ textDecoration: t.done ? 'line-through' : 'none', color: t.done ? 'var(--ink3)' : 'var(--ink)' }}>
+                              {t.title}
+                            </span>
+                            {t.link && (
+                              <a
+                                className="task-link"
+                                href={t.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={t.link}
+                              >
+                                🔗 Open link
+                              </a>
+                            )}
+                            {total > 0 && (
+                              <button
+                                type="button"
+                                className={`checklist-toggle ${done === total ? 'complete' : ''}`}
+                                onClick={() => toggleExpanded(t._id)}
+                                title={isOpen ? 'Hide checklist' : 'Show checklist'}
+                              >
+                                {isOpen ? '▾' : '▸'} ☑ {done}/{total}
+                              </button>
+                            )}
+                          </div>
+                          {t.note && <div className="task-note">{t.note}</div>}
+                        </div>
+                        <span className={`tag ${t.priority === 'high' ? 'rose' : t.priority === 'low' ? 'green' : 'ochre'}`}>
+                          {t.priority}{t.due ? ` · ${t.due}` : ''}
+                        </span>
+                        {viewingSelf && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn ghost sm" onClick={() => setEditing(t)}>Edit</button>
+                            <button className="btn danger sm" onClick={() => remove(t._id)}>Delete</button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {total > 0 && isOpen && (
+                        <div style={{ padding: '0 18px 12px 54px' }}>
+                          <ChecklistView
+                            items={checklist}
+                            readOnly={!viewingSelf}
+                            onToggle={(itemId) => toggleChecklistItem(t, itemId)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -132,12 +231,25 @@ export function Tasks() {
       )}
 
       {editing && (
-        <FormModal
-          title={editing._id ? 'Edit task' : 'Add task'}
-          fields={FIELDS}
+        <TaskEditorModal
+          mode="task"
           initial={editing}
+          clients={clients}
+          instances={instances}
           onSubmit={save}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {showInstances && (
+        <TaskInstancesModal
+          instances={instances}
+          canEdit={viewingSelf}
+          onCreate={createInstance}
+          onUpdate={updateInstance}
+          onDelete={deleteInstance}
+          onUse={useInstance}
+          onClose={() => setShowInstances(false)}
         />
       )}
     </main>
