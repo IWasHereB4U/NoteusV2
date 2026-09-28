@@ -27,6 +27,14 @@ const DAY_FIELDS = [
   { k: 'status', label: 'Status', type: 'select', half: true, options: DAY_STATUSES.map((s) => [s, s]) },
 ];
 
+// Duplicating a whole work day: pick the target date (and the status the
+// copy should start in — normally Draft, since the copy hasn't been
+// submitted yet even if the original was already Approved).
+const DUPLICATE_DAY_FIELDS = [
+  { k: 'date', label: 'Copy to date', type: 'date', required: true },
+  { k: 'status', label: 'Status of the copy', type: 'select', options: DAY_STATUSES.map((s) => [s, s]) },
+];
+
 const TASK_FIELDS = [
   { k: 'title', label: 'Task title', required: true },
   { k: 'detail', label: 'Task detail', type: 'textarea' },
@@ -43,6 +51,21 @@ const TIMESKIP_FIELDS = [
   { k: 'startTime', label: 'Start time', type: 'time', half: true, required: true },
   { k: 'endTime', label: 'End time', type: 'time', half: true, required: true },
 ];
+
+// Next calendar day after a YYYY-MM-DD string — the default target when
+// duplicating a day, since "same as yesterday" is the common case.
+function nextDateISO(dateStr) {
+  const d = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
+  d.setDate(d.getDate() + 1);
+  return iso(d);
+}
+
+// Strips the server-assigned fields off a task subdocument so it can be
+// saved again as a brand-new task (the server gives it a fresh _id).
+function cloneTask(task) {
+  const { _id, createdAt, updatedAt, __v, ...rest } = task;
+  return rest;
+}
 
 function hoursBetween(start, end) {
   if (!start || !end) return 0;
@@ -249,6 +272,7 @@ export function Timesheet() {
   const { viewingSelf } = useAuth();
   const [editingDay, setEditingDay] = useState(null); // work-day form
   const [taskCtx, setTaskCtx] = useState(null); // { day, task } — task null = adding
+  const [duplicatingDay, setDuplicatingDay] = useState(null); // work day being copied to another date
   const [copyState, setCopyState] = useState('idle'); // 'idle' | 'copied' | 'error'
   const [collapsedIds, setCollapsedIds] = useState(() => new Set()); // day._id's currently collapsed
   const [showCalendar, setShowCalendar] = useState(false);
@@ -310,6 +334,47 @@ export function Timesheet() {
     reload();
   }
 
+  // Copies a whole work day — start/end times and every task and timeskip,
+  // in the same order — onto another date. If that date already has a
+  // work day, the copied tasks are appended to it (after a confirm) rather
+  // than creating a second day on the same date; its own start/end/status
+  // are left alone. Throwing keeps the modal open with the message shown.
+  async function duplicateDay(values) {
+    const source = duplicatingDay;
+    const target = values.date;
+    if (!target) throw new Error('Pick a date to copy to');
+    if (target === source.date) throw new Error('Pick a different date from the original');
+
+    const tasks = (source.tasks || []).map(cloneTask);
+    const existing = days.find((d) => d.date === target);
+
+    if (existing) {
+      const label = new Date(`${target}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const ok = confirm(
+        `${label} already has a work day. Add this day's ${tasks.length} task(s) to the end of it?`
+      );
+      if (!ok) throw new Error('That date already has a work day — pick another date');
+      await api.put(
+        `/timesheet-days/${existing._id}`,
+        { tasks: [...existing.tasks, ...tasks] },
+        viewingId || undefined
+      );
+    } else {
+      await api.post(
+        '/timesheet-days',
+        {
+          date: target,
+          startTime: source.startTime,
+          endTime: source.endTime,
+          status: values.status || 'Draft',
+          tasks,
+        },
+        viewingId || undefined
+      );
+    }
+    await reload();
+  }
+
   async function setDayStatus(day, status) {
     if (status === (day.status || 'Draft')) return;
     await api.put(`/timesheet-days/${day._id}`, { status }, viewingId || undefined);
@@ -352,7 +417,7 @@ export function Timesheet() {
   // server assigns a fresh subdocument id; the copy then gets rescheduled
   // like any other task once saved.
   async function duplicateTask(day, task) {
-    const { _id, createdAt, updatedAt, __v, ...rest } = task;
+    const rest = cloneTask(task);
     const idx = day.tasks.findIndex((t) => t._id === task._id);
     const tasks = [...day.tasks];
     tasks.splice(idx + 1, 0, rest);
@@ -436,6 +501,7 @@ export function Timesheet() {
                 onToggleCollapsed={() => toggleCollapsed(day._id)}
                 onEditDay={() => setEditingDay(day)}
                 onDeleteDay={() => removeDay(day._id)}
+                onDuplicateDay={() => setDuplicatingDay(day)}
                 onSetStatus={(status) => setDayStatus(day, status)}
                 onAddTask={() => setTaskCtx({ day, task: null, type: 'task' })}
                 onAddTimeskip={() => setTaskCtx({ day, task: null, type: 'timeskip' })}
@@ -460,6 +526,17 @@ export function Timesheet() {
         />
       )}
 
+      {duplicatingDay && (
+        <FormModal
+          title="Duplicate work day"
+          fields={DUPLICATE_DAY_FIELDS}
+          initial={{ date: nextDateISO(duplicatingDay.date), status: 'Draft' }}
+          submitLabel="Duplicate"
+          onSubmit={duplicateDay}
+          onClose={() => setDuplicatingDay(null)}
+        />
+      )}
+
       {taskCtx && (() => {
         const isSkip = (taskCtx.task?.type ?? taskCtx.type) === 'timeskip';
         return (
@@ -480,7 +557,7 @@ export function Timesheet() {
   );
 }
 
-function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay, onDeleteDay, onSetStatus, onAddTask, onAddTimeskip, onEditTask, onDeleteTask, onDuplicateTask, onReorderTasks, onCopyDay }) {
+function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay, onDeleteDay, onDuplicateDay, onSetStatus, onAddTask, onAddTimeskip, onEditTask, onDeleteTask, onDuplicateTask, onReorderTasks, onCopyDay }) {
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const plannedHours = hoursBetween(day.startTime, day.endTime);
@@ -553,6 +630,7 @@ function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay
           {viewingSelf && (
             <>
               <button className="btn ghost sm" onClick={onEditDay}>Edit</button>
+              <button className="btn ghost sm" onClick={onDuplicateDay} title="Copy this day and all its tasks to another date">Duplicate</button>
               <button className="btn danger sm" onClick={onDeleteDay}>Delete</button>
             </>
           )}
