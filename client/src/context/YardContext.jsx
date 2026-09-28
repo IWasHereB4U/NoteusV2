@@ -5,6 +5,8 @@ import { API_ORIGIN } from '../api/client.js';
 
 const YardContext = createContext(null);
 
+const YARD_ENABLED = import.meta.env.VITE_ENABLE_YARD === 'true';
+
 export const ANIMATIONS = {
   wave: { duo: false, label: 'Wave', icon: '👋' },
   dance: { duo: false, label: 'Dance', icon: '💃' },
@@ -25,6 +27,13 @@ export function YardProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    // The yard needs a long-running Socket.io server, which Vercel's
+    // serverless functions can't host — and <Yard /> is currently
+    // commented out in Layout.jsx anyway. Connecting regardless meant
+    // every logged-in tab retried /socket.io forever in the background.
+    // Opt in with VITE_ENABLE_YARD=true when the API runs somewhere that
+    // supports it (local dev, Render/Railway/Fly, a VPS).
+    if (!YARD_ENABLED) return;
     if (!user) {
       socketRef.current?.disconnect();
       socketRef.current = null;
@@ -33,7 +42,12 @@ export function YardProvider({ children }) {
     }
 
     const token = localStorage.getItem('noteus_token');
-    const socket = io(API_ORIGIN || '/', { auth: { token }, transports: ['websocket', 'polling'] });
+    const socket = io(API_ORIGIN || '/', {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      // Don't retry forever if the realtime server isn't there.
+      reconnectionAttempts: 5,
+    });
     socketRef.current = socket;
 
     const selfX = 40 + Math.round(Math.random() * 200);

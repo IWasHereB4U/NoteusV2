@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { FreeCanvas } from './FreeCanvas.jsx';
 import { FixedEditor } from './FixedEditor.jsx';
 import { CommentsPanel } from './CommentsPanel.jsx';
+import { usePolling } from '../../hooks/usePolling.js';
 
 // For 'text' anchors (fixed-doc highlights), a thread only reads as
 // "resolved" on the page once every comment sharing that anchor is
@@ -54,17 +55,29 @@ export function CardEditor({ card, onClose, onSaved }) {
   // network round-trip (and a console error) on every keystroke a
   // view-only visitor didn't actually make (typing is already disabled
   // in both editors below, but this is the belt-and-suspenders version).
+  //
+  // Two usage fixes: (1) this used to fire once on open with nothing
+  // changed, so just opening a note cost a write; (2) it now compares
+  // against what was last saved, so edits that end up back where they
+  // started (or re-renders that rebuild an identical elements array)
+  // don't send a PUT. Debounce is 1.5s so a burst of typing is one save.
+  const lastSavedRef = useRef(
+    JSON.stringify(card.mode === 'free' ? { title: card.title, elements: card.elements || [] } : { title: card.title, html: card.html || '' })
+  );
   useEffect(() => {
     if (!canEdit) return;
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(save, 800);
+    saveTimer.current = setTimeout(save, 1500);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, elements, html, canEdit]);
 
   async function save() {
     const patch = card.mode === 'free' ? { title, elements } : { title, html };
+    const snapshot = JSON.stringify(patch);
+    if (snapshot === lastSavedRef.current) return;
     const updated = await notesApi.updateCard(card._id, patch, viewingId || undefined);
+    lastSavedRef.current = snapshot;
     setSavedAt(new Date());
     onSaved?.(updated);
   }
@@ -73,20 +86,19 @@ export function CardEditor({ card, onClose, onSaved }) {
   // the app's 45s circle-sharing poll — but only refresh the comments
   // field, never the note body, so a co-viewer's activity can't clobber
   // whatever's mid-edit in the title/canvas/document here.
+  //
+  // Uses the comments-only endpoint (not the whole card), runs every 30s
+  // instead of 15s, only while the comments panel is open, and pauses
+  // while the tab is in the background (see usePolling).
   async function refreshComments() {
     try {
-      const fresh = await notesApi.getCard(card._id, viewingId || undefined);
+      const fresh = await notesApi.getComments(card._id, viewingId || undefined);
       setComments(fresh.comments || []);
     } catch {
       /* not fatal — next poll or action will retry */
     }
   }
-  useEffect(() => {
-    refreshComments();
-    const id = setInterval(refreshComments, 15000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card._id, viewingId]);
+  usePolling(refreshComments, 30000, showPanel);
 
   // Reflect resolved state onto the doc's highlight spans whenever the
   // comment list changes (see commentMark.js — this is display-only and

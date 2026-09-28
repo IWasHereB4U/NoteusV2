@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePolling } from './usePolling.js';
 
 // Loads a list from `path`, automatically re-fetching whenever the
 // person-switcher changes whose book we're looking at.
@@ -36,10 +37,11 @@ export function useResource(path) {
   // else revokes a module mid-session) — there's no push from the server,
   // so poll periodically to catch a now-403'd module instead of leaving
   // whatever was last fetched on screen indefinitely.
-  useEffect(() => {
-    const id = setInterval(reload, 45000);
-    return () => clearInterval(id);
-  }, [reload]);
+  //
+  // Visible-tab only, and every 2 minutes rather than 45s: a revoked
+  // share showing up a minute later is fine, and this runs once per open
+  // page per tab.
+  usePolling(reload, 120000);
 
   return { items, loading, error, reload, viewingId };
 }

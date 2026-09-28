@@ -17,6 +17,9 @@ export const notesApi = {
   updateCard: (id, body, viewAs) => api.put(`/note-cards/${id}`, body, viewAs),
   deleteCard: (id, viewAs) => api.del(`/note-cards/${id}`, viewAs),
   getCard: (id, viewAs) => api.get(`/note-cards/${id}`, viewAs),
+  // Comments only — used by the editor's poll so it doesn't re-download
+  // the whole note body every time.
+  getComments: (id, viewAs) => api.get(`/note-cards/${id}/comments`, viewAs),
 
   addComment: (cardId, body, viewAs) => api.post(`/note-cards/${cardId}/comments`, body, viewAs),
   updateComment: (cardId, commentId, body, viewAs) => api.put(`/note-cards/${cardId}/comments/${commentId}`, body, viewAs),

@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
-const REFRESH_THROTTLE_MS = 60 * 1000; // don't hit /refresh more than once a minute
+// The JWT lasts 30 minutes (JWT_EXPIRES_IN), so refreshing it every 10
+// minutes of activity is plenty — it was once a minute, i.e. ~60 function
+// calls an hour per active tab just to keep the session alive.
+const REFRESH_THROTTLE_MS = 10 * 60 * 1000;
 
 // Watches for real user activity. If none arrives for 30 minutes, calls
 // onIdle() (the app logs the person out). While active, calls onActivity()

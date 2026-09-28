@@ -53,6 +53,17 @@ router.get('/', async (req, res) => {
   );
 });
 
+// Lightweight read used by the editor's comment poll — returns just the
+// comments instead of the whole note body (html / canvas elements), which
+// can be large and was being re-sent on every poll.
+router.get('/:id/comments', async (req, res) => {
+  const card = await NoteCard.findOne({ _id: req.params.id, owner: req.ownerId })
+    .select('comments')
+    .lean();
+  if (!card) return res.status(404).json({ error: 'Not found' });
+  res.json({ comments: card.comments || [] });
+});
+
 router.get('/:id', async (req, res) => {
   const card = await NoteCard.findOne({ _id: req.params.id, owner: req.ownerId });
   if (!card) return res.status(404).json({ error: 'Not found' });

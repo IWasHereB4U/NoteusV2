@@ -1,4 +1,10 @@
 import express from 'express';
+// Express 4 doesn't catch rejected promises from async handlers — a thrown
+// error (bad ObjectId, validation failure, DB hiccup) left the request
+// hanging with no response. On Vercel a hanging request keeps the 2 GB
+// instance billed for Provisioned Memory until the function times out.
+// This patch routes those rejections to the error handler at the bottom.
+import 'express-async-errors';
 import cors from 'cors';
 
 import { resolveCorsOrigin } from './config/corsOrigin.js';
@@ -27,8 +33,12 @@ import TimesheetDay from './models/TimesheetDay.js';
 //     a plain (req, res) handler and can't host a persistent Socket.io
 //     server or persist file uploads across invocations.
 const app = express();
-app.use(cors({ origin: resolveCorsOrigin() }));
-app.use(express.json());
+// maxAge lets the browser cache the CORS preflight for 24h. Every JSON
+// request with an Authorization header triggers an OPTIONS preflight when
+// the client and API are on different origins — without this, that's a
+// second function invocation for nearly every real request.
+app.use(cors({ origin: resolveCorsOrigin(), maxAge: 86400 }));
+app.use(express.json({ limit: '2mb' }));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));

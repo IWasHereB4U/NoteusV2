@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api, setUnauthorizedHandler } from '../api/client.js';
 import { useIdleTimer } from '../hooks/useIdleTimer.js';
+import { usePolling } from '../hooks/usePolling.js';
 
 const AuthContext = createContext(null);
 
@@ -112,11 +113,8 @@ export function AuthProvider({ children }) {
   // There's no push from the server when someone changes what they share
   // with you — poll periodically so the nav (which reads circle.viewable)
   // catches a revoked module without needing a full page reload.
-  useEffect(() => {
-    if (!user) return;
-    const id = setInterval(loadCircle, 45000);
-    return () => clearInterval(id);
-  }, [user, loadCircle]);
+  // Visible-tab only, every 2 minutes (was 45s, always on).
+  usePolling(loadCircle, 120000, !!user);
 
   const value = {
     user,

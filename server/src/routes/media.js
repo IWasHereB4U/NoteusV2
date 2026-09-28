@@ -9,7 +9,15 @@ import MediaAsset from '../models/MediaAsset.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOAD_DIR = path.join(__dirname, '../../uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Vercel's filesystem is read-only (and wiped between instances), so this
+// can throw there. Don't let it take down the whole API at cold start —
+// uploads just won't persist on Vercel; use Vercel Blob / Cloudinary / S3
+// for media if the API stays on Vercel.
+try {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+} catch (err) {
+  console.warn('[media] upload dir not writable here:', err.code);
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),

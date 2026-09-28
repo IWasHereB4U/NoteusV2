@@ -3,9 +3,16 @@
 // which resolveViewer has already permission-checked. This factory avoids
 // writing the same five handlers five times.
 export function makeCrud(Model, { sortBy = '-createdAt' } = {}) {
+  // .lean() skips building full Mongoose documents for every row, which is
+  // most of the CPU in a list request. Models with a custom toJSON (e.g.
+  // Invoice's `total` virtual) keep full documents so their JSON shape
+  // doesn't change.
+  const useLean = !Model.schema.options.toJSON;
+
   return {
     async list(req, res) {
-      const docs = await Model.find({ owner: req.ownerId }).sort(sortBy);
+      const q = Model.find({ owner: req.ownerId }).sort(sortBy);
+      const docs = useLean ? await q.lean() : await q;
       res.json(docs);
     },
 
