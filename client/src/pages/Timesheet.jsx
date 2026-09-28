@@ -781,7 +781,7 @@ function WorkdayBar({ blocks, loggedHours, capacityHours, startTime, endLabel })
         title={`${formatHM(Math.floor(loggedHours), Math.round((loggedHours % 1) * 60))} logged${capacityHours ? ` of ${capacityHours}h planned` : ''}`}
         style={{
           position: 'relative', width: 16, height: barHeight, borderRadius: 8,
-          background: 'var(--paper2, #f3efe8)', border: '1px solid var(--line)',
+          background: 'var(--sunk)', border: '1px solid var(--line)',
           overflow: 'hidden',
         }}
       >

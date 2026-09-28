@@ -56,7 +56,14 @@ function TagPicker({ tags, value, onChange, onManage }) {
 
 export function NoteTags() {
   const { items: words, reload: reloadWords, viewingId } = useResource('/tag-words');
-  const { items: tags, reload: reloadTags } = useResource('/note-tags');
+  const { items: rawTags, reload: reloadTags } = useResource('/note-tags');
+  // Tags in a stable, case-insensitive A–Z order. This order drives
+  // everything tag-related on the page: filter chips, the tag picker, the
+  // chips on each word, and how the word list is grouped.
+  const tags = useMemo(
+    () => [...rawTags].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [rawTags]
+  );
   const { viewingSelf } = useAuth();
   const va = viewingId || undefined;
 
@@ -67,8 +74,13 @@ export function NoteTags() {
   const [filterTags, setFilterTags] = useState([]); // tag ids; '__none' = untagged
   const [editingWord, setEditingWord] = useState(null);
   const [showTags, setShowTags] = useState(false);
+  const [sortMode, setSortMode] = useState('tag'); // 'tag' | 'az'
 
   const tagById = useMemo(() => Object.fromEntries(tags.map((t) => [t._id, t])), [tags]);
+  const tagRank = useMemo(() => Object.fromEntries(tags.map((t, i) => [t._id, i])), [tags]);
+  // A word's tags that still exist, in tag order.
+  const orderedTagIds = (w) =>
+    (w.tags || []).filter((id) => tagById[id]).sort((a, b) => tagRank[a] - tagRank[b]);
   const wordCountByTag = useMemo(() => {
     const counts = {};
     for (const w of words) for (const id of w.tags || []) counts[id] = (counts[id] || 0) + 1;
@@ -88,8 +100,25 @@ export function NoteTags() {
         if (wanted.has('__none') && has.length === 0) return true;
         return has.some((id) => wanted.has(id));
       })
-      .sort((a, b) => a.word.localeCompare(b.word, undefined, { sensitivity: 'base' }));
-  }, [words, query, filterTags]);
+      .map((w) => ({ ...w, orderedTags: orderedTagIds(w) }))
+      .sort((a, b) => {
+        const byWord = a.word.localeCompare(b.word, undefined, { sensitivity: 'base' });
+        if (sortMode === 'az') return byWord;
+        // By tag: group on the word's first tag (in tag order), untagged
+        // last. Within a group, words with the same further tags sit
+        // together (e.g. Client-only before Client + Task), then A–Z.
+        const ra = a.orderedTags.map((id) => tagRank[id]);
+        const rb = b.orderedTags.map((id) => tagRank[id]);
+        if (!ra.length || !rb.length) return (ra.length ? -1 : rb.length ? 1 : 0) || byWord;
+        for (let i = 0; i < Math.max(ra.length, rb.length); i++) {
+          if (ra[i] === undefined) return -1;
+          if (rb[i] === undefined) return 1;
+          if (ra[i] !== rb[i]) return ra[i] - rb[i];
+        }
+        return byWord;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [words, query, filterTags, sortMode, tagById, tagRank]);
 
   function findDuplicate(word, exceptId) {
     const w = word.trim().toLowerCase();
@@ -182,6 +211,11 @@ export function NoteTags() {
       <div className="card">
         <div className="card-h">
           <h2>Words · {shown.length}{shown.length !== words.length ? ` of ${words.length}` : ''}</h2>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink3)', fontWeight: 600 }}>Sort</span>
+            <button className={`btn sm ${sortMode === 'tag' ? '' : 'ghost'}`} onClick={() => setSortMode('tag')}>By tag</button>
+            <button className={`btn sm ${sortMode === 'az' ? '' : 'ghost'}`} onClick={() => setSortMode('az')}>A–Z</button>
+          </div>
           <input
             className="field sm"
             placeholder="Search words…"
@@ -233,14 +267,28 @@ export function NoteTags() {
           <div className="empty">No words match the current search or filter.</div>
         ) : (
           <div className="stack">
-            {shown.map((w) => (
+            {shown.map((w, i) => {
+              // In "By tag" mode a header row starts each group (keyed on
+              // the word's first tag), so the list reads Client → Status → Task.
+              const group = w.orderedTags[0] || '__none';
+              const prevGroup = i > 0 ? shown[i - 1].orderedTags[0] || '__none' : null;
+              const header = sortMode === 'tag' && group !== prevGroup && (
+                <div key={`h-${group}`} className="word-list-group" style={{ color: tagById[group]?.color || 'var(--ink3)' }}>
+                  <span className="dot" style={{ background: tagById[group]?.color || 'var(--ink3)' }} />
+                  {tagById[group]?.name || 'Untagged'}
+                  <span style={{ color: 'var(--ink3)', fontWeight: 500 }}>
+                    {shown.filter((x) => (x.orderedTags[0] || '__none') === group).length}
+                  </span>
+                </div>
+              );
+              return [header, (
               <div key={w._id} className="row" style={{ gridTemplateColumns: 'minmax(120px, 220px) 1fr auto' }}>
                 <div style={{ fontWeight: 600, wordBreak: 'break-word' }}>{w.word}</div>
                 <div className="chip-wrap">
-                  {(w.tags || []).filter((id) => tagById[id]).map((id) => (
+                  {w.orderedTags.map((id) => (
                     <TagChip key={id} tag={tagById[id]} small />
                   ))}
-                  {!(w.tags || []).some((id) => tagById[id]) && (
+                  {!w.orderedTags.length && (
                     <span style={{ fontSize: 12, color: 'var(--ink3)' }}>No tags</span>
                   )}
                 </div>
@@ -251,7 +299,8 @@ export function NoteTags() {
                   </div>
                 ) : <span />}
               </div>
-            ))}
+              )];
+            })}
           </div>
         )}
       </div>

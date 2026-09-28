@@ -1,33 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Modal } from './Modal.jsx';
 
-const SEPARATORS = [
-  [' ', 'Space'],
-  [' - ', 'Dash  ( - )'],
-  [' | ', 'Bar  ( | )'],
-  [' / ', 'Slash  ( / )'],
-  [', ', 'Comma  ( , )'],
-  [': ', 'Colon  ( : )'],
-];
-
 function tint(hex) {
   return /^#[0-9a-f]{6}$/i.test(hex || '') ? `${hex}26` : 'var(--line)';
 }
 
-// Remembers the last "Join with" choice for the rest of the session.
-let lastSeparator = ' ';
-
-let pieceSeq = 0;
-const piece = (text, color) => ({ key: `p${++pieceSeq}`, text, color });
-
-// Builds a title out of Note Tag words. Words are shown grouped by tag
-// (so with tags like "Client" and "Task" you pick one from each group),
-// can be narrowed by tag chips and a search, and every click adds the
-// word to the title being built at the top. Rendered in a portal so it
-// can open from inside another form without submitting it.
+// Builds a task title out of Note Tag words. Words are shown grouped by
+// tag (so with tags like "Client" and "Task" you pick one from each
+// group) and can be narrowed by tag chips and a search. Clicking a word
+// appends it to the title box at the top, which stays a normal text field
+// you can edit by hand. Rendered in a portal so it can open from inside
+// another form without submitting it.
 export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
   const [words, setWords] = useState([]);
   const [tags, setTags] = useState([]);
@@ -35,10 +21,8 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
   const [loadError, setLoadError] = useState('');
   const [query, setQuery] = useState('');
   const [activeTags, setActiveTags] = useState([]); // empty = show every tag group
-  const [picked, setPicked] = useState([]);
-  const [separator, setSeparatorState] = useState(lastSeparator);
-  const setSeparator = (v) => { lastSeparator = v; setSeparatorState(v); };
-  const [custom, setCustom] = useState('');
+  const [title, setTitle] = useState(currentTitle);
+  const titleRef = useRef(null);
 
   // Loaded when the picker opens rather than polled with the page — this
   // is the only place the Timesheet needs Note Tag data.
@@ -48,7 +32,7 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
       .then(([w, t]) => {
         if (!alive) return;
         setWords(w);
-        setTags(t);
+        setTags([...t].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
       })
       .catch((err) => alive && setLoadError(err.message || 'Could not load Note Tag words'))
       .finally(() => alive && setLoading(false));
@@ -79,36 +63,23 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
     return out.filter((g) => g.words.length > 0 || activeTags.includes(g.key));
   }, [words, tags, tagById, query, activeTags]);
 
-  const preview = picked.map((p) => p.text).join(separator);
-  const appended = currentTitle.trim() ? `${currentTitle.trim()}${separator}${preview}` : preview;
-
   function toggleTag(id) {
     setActiveTags((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
   }
 
-  function add(text, color) {
-    setPicked((p) => [...p, piece(text, color)]);
-  }
-
-  function addCustom() {
-    const t = custom.trim();
-    if (!t) return;
-    add(t, null);
-    setCustom('');
-  }
-
-  function move(i, dir) {
-    setPicked((p) => {
-      const j = i + dir;
-      if (j < 0 || j >= p.length) return p;
-      const next = [...p];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
+  // Appends with a single space unless the title is empty or already ends
+  // in whitespace. Focus is left where it is (so you can keep clicking
+  // words or searching); the box just scrolls to show the end.
+  function append(word) {
+    setTitle((t) => (!t || /\s$/.test(t) ? t + word : `${t} ${word}`));
+    requestAnimationFrame(() => {
+      const el = titleRef.current;
+      if (el) el.scrollLeft = el.scrollWidth;
     });
   }
 
-  function apply(title) {
-    onApply(title);
+  function apply() {
+    onApply(title.trim());
     onClose();
   }
 
@@ -120,90 +91,36 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
       footer={
         <>
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled={!picked.length || !currentTitle.trim()}
-            onClick={() => apply(appended)}
-            title={currentTitle.trim() ? `Result: ${appended}` : 'The title is empty — use "Use as title" instead'}
-          >
-            Append to title
-          </button>
-          <button type="button" className="btn" disabled={!picked.length} onClick={() => apply(preview)}>
-            Use as title
-          </button>
+          <button type="button" className="btn" disabled={!title.trim()} onClick={apply}>Use as title</button>
         </>
       }
     >
-      {/* The title being built */}
-      <div className="word-builder">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink2)' }}>Title</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink3)' }}>
-            Join with
-            <select className="field sm" value={separator} onChange={(e) => setSeparator(e.target.value)} style={{ width: 'auto' }}>
-              {SEPARATORS.map(([v, l]) => <option key={l} value={v}>{l}</option>)}
-            </select>
-          </label>
-        </div>
-
-        {picked.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: 'var(--ink3)' }}>Click words below to add them here, in order.</div>
-        ) : (
-          <div className="chip-wrap" style={{ alignItems: 'center' }}>
-            {picked.map((p, i) => (
-              <span
-                key={p.key}
-                className="tag-chip"
-                style={{ background: p.color ? tint(p.color) : 'var(--line)', color: p.color || 'var(--ink)', paddingRight: 4 }}
-              >
-                {i > 0 && (
-                  <button type="button" className="chip-mini" onClick={() => move(i, -1)} title="Move left" aria-label="Move left">‹</button>
-                )}
-                {p.text}
-                {i < picked.length - 1 && (
-                  <button type="button" className="chip-mini" onClick={() => move(i, 1)} title="Move right" aria-label="Move right">›</button>
-                )}
-                <button
-                  type="button"
-                  className="chip-mini"
-                  onClick={() => setPicked((all) => all.filter((x) => x.key !== p.key))}
-                  title="Remove"
-                  aria-label={`Remove ${p.text}`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <button type="button" className="btn ghost sm" onClick={() => setPicked([])}>Clear</button>
-          </div>
-        )}
-
-        {/* Not a <form>: React events bubble through the portal, so a
-            submit here would also submit the task form underneath. */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+      <div className="field-row" style={{ marginBottom: 0 }}>
+        <label htmlFor="word-picker-title">Task title</label>
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
-            className="field sm"
-            placeholder="Add your own text (e.g. a ticket number)"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
+            id="word-picker-title"
+            ref={titleRef}
+            className="field"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Click words below, or type"
+            autoFocus
             onKeyDown={(e) => {
+              // Enter applies — and must not bubble through the portal
+              // into the task form underneath.
               if (e.key === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation();
-                addCustom();
+                if (title.trim()) apply();
               }
             }}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 0 }}
           />
-          <button type="button" className="btn ghost sm" onClick={addCustom} disabled={!custom.trim()}>+ Add</button>
+          <button type="button" className="btn ghost sm" onClick={() => setTitle('')} disabled={!title}>
+            Clear
+          </button>
         </div>
-
-        {picked.length > 0 && (
-          <div className="word-preview" title="Preview">
-            {preview}
-          </div>
-        )}
       </div>
 
       {/* Filters */}
@@ -213,8 +130,8 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
           placeholder="Search words…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); } }}
           style={{ width: 180 }}
-          autoFocus
         />
         {tags.map((t) => {
           const on = activeTags.includes(t._id);
@@ -267,8 +184,8 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
                       key={w._id}
                       type="button"
                       className="tag-chip pick"
-                      onClick={() => add(w.word, g.tag?.color)}
-                      title={`Add “${w.word}”`}
+                      onClick={() => append(w.word)}
+                      title={`Append “${w.word}”`}
                     >
                       {w.word}
                     </button>
