@@ -4,6 +4,7 @@ import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
 import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
+import { ExtensionMacrosModal } from '../components/tasks/ExtensionMacrosModal.jsx';
 import { ChecklistView } from '../components/tasks/Checklist.jsx';
 import { cloneFresh, countItems, toggleItem } from '../components/tasks/checklist.js';
 
@@ -26,9 +27,11 @@ export function Tasks() {
   const { items, reload, viewingId } = useResource('/tasks');
   const { items: clients } = useResource('/clients');
   const { items: instances, reload: reloadInstances } = useResource('/task-instances');
+  const { items: macros, reload: reloadMacros } = useResource('/extension-macros');
   const { viewingSelf } = useAuth();
   const [editing, setEditing] = useState(null);
   const [showInstances, setShowInstances] = useState(false);
+  const [showMacros, setShowMacros] = useState(false);
   const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
   const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist open
   // Checklist ticks show instantly; the saved copy replaces this on reload.
@@ -136,11 +139,45 @@ export function Tasks() {
     await reload();
   }
 
+  // --- Extension macros (Form Macros browser extension) ---------------
+  // Same name + URL pattern as an existing macro → its steps are updated,
+  // matching how the extension itself merges imports.
+  async function upsertMacros(list) {
+    let added = 0;
+    let updated = 0;
+    for (const m of list) {
+      const existing = macros.find((x) => x.name === m.name && x.match === m.match);
+      if (existing) {
+        await api.put(`/extension-macros/${existing._id}`, { steps: m.steps }, viewingId || undefined);
+        updated++;
+      } else {
+        await api.post('/extension-macros', m, viewingId || undefined);
+        added++;
+      }
+    }
+    await reloadMacros();
+    return { added, updated };
+  }
+
+  async function updateMacro(id, values) {
+    await api.put(`/extension-macros/${id}`, values, viewingId || undefined);
+    await reloadMacros();
+  }
+
+  async function deleteMacro(m) {
+    if (!confirm(`Delete the macro "${m.name}" from NoteUs? Copies already in your extension are kept.`)) return;
+    await api.del(`/extension-macros/${m._id}`, viewingId || undefined);
+    await reloadMacros();
+  }
+
   return (
     <main className="page">
       <div className="page-head">
         <div><div className="eyebrow">To do</div><h1>Tasks</h1></div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn ghost" onClick={() => setShowMacros(true)}>
+            Extension macros{macros.length ? ` (${macros.length})` : ''}
+          </button>
           <button className="btn ghost" onClick={() => setShowInstances(true)}>
             Task instances{instances.length ? ` (${instances.length})` : ''}
           </button>
@@ -250,6 +287,17 @@ export function Tasks() {
           onDelete={deleteInstance}
           onUse={useInstance}
           onClose={() => setShowInstances(false)}
+        />
+      )}
+
+      {showMacros && (
+        <ExtensionMacrosModal
+          macros={macros}
+          canEdit={viewingSelf}
+          onUpsert={upsertMacros}
+          onUpdate={updateMacro}
+          onDelete={deleteMacro}
+          onClose={() => setShowMacros(false)}
         />
       )}
     </main>

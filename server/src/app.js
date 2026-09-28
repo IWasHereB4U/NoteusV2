@@ -25,6 +25,7 @@ import Invoice from './models/Invoice.js';
 import CalendarEvent from './models/CalendarEvent.js';
 import TimesheetDay from './models/TimesheetDay.js';
 import TaskInstance from './models/TaskInstance.js';
+import ExtensionMacro from './models/ExtensionMacro.js';
 import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
 import noteTagRoutes from './routes/noteTags.js';
@@ -53,6 +54,7 @@ app.use('/api/clients', resourceRouter(Client, { moduleKey: 'clients' }));
 app.use('/api/transactions', resourceRouter(Transaction, { sortBy: '-date', moduleKey: 'money' }));
 app.use('/api/tasks', resourceRouter(Task, { sortBy: 'due', moduleKey: 'tasks' }));
 app.use('/api/task-instances', resourceRouter(TaskInstance, { sortBy: 'name', moduleKey: 'tasks' }));
+app.use('/api/extension-macros', resourceRouter(ExtensionMacro, { sortBy: 'name', moduleKey: 'tasks' }));
 app.use('/api/note-tags', noteTagRoutes); // tag delete also untags words
 app.use('/api/note-tags', resourceRouter(NoteTag, { sortBy: 'name', moduleKey: 'notetags' }));
 app.use('/api/tag-words', resourceRouter(TagWord, { sortBy: 'word', moduleKey: 'notetags' }));
