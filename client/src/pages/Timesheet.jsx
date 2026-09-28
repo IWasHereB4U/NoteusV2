@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { FormModal } from '../components/Modal.jsx';
+import { WordPickerModal } from '../components/WordPickerModal.jsx';
 
 const COLORS = ['#0E9C92', '#F1614B', '#DB9A2F', '#5B6EE1', '#9B5DE5'];
 const PX_PER_HOUR = 26;
@@ -35,8 +36,39 @@ const DUPLICATE_DAY_FIELDS = [
   { k: 'status', label: 'Status of the copy', type: 'select', options: DAY_STATUSES.map((s) => [s, s]) },
 ];
 
+// Button beside the task title that opens the Note Tag word picker, so a
+// title can be assembled from saved words (e.g. one "Client" word + one
+// "Task" word) instead of typed out each time.
+function TitleWordPicker({ value, setValue }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="btn ghost sm title-pick-btn"
+        onClick={() => setOpen(true)}
+        title="Build the title from your Note Tag words"
+      >
+        # Words
+      </button>
+      {open && (
+        <WordPickerModal
+          currentTitle={value || ''}
+          onApply={setValue}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
 const TASK_FIELDS = [
-  { k: 'title', label: 'Task title', required: true },
+  {
+    k: 'title',
+    label: 'Task title',
+    required: true,
+    addon: ({ value, setValue }) => <TitleWordPicker value={value} setValue={setValue} />,
+  },
   { k: 'detail', label: 'Task detail', type: 'textarea' },
   { k: 'hours', label: 'Hours done', type: 'number', half: true, required: true },
   { k: 'minutes', label: 'Minutes done', type: 'number', half: true, required: true },

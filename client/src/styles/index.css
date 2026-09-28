@@ -327,3 +327,14 @@ textarea.field{resize:vertical;min-height:70px}
 .tag-chip.pick:hover{border-color:var(--ink)}
 .tag-chip .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .chip-wrap{display:flex;flex-wrap:wrap;gap:6px}
+
+/* --- Word picker (Timesheet task title from Note Tag words) ------------- */
+.word-builder{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--paper2, #f7f5f0)}
+.word-preview{margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--panel);border:1px dashed var(--line2);font-size:13.5px;font-weight:600;word-break:break-word}
+.chip-mini{border:0;background:transparent;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0 3px;opacity:.65}
+.chip-mini:hover{opacity:1}
+.word-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-height:44vh;overflow:auto;padding-right:2px}
+.word-group{border:1px solid var(--line);border-radius:10px;padding:10px}
+.word-group-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;margin-bottom:8px}
+.word-group-h .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.title-pick-btn{white-space:nowrap}

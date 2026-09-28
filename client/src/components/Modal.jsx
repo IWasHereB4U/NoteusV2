@@ -185,6 +185,22 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
                   placeholder={f.placeholder}
                   onChange={(e) => set(f.k, e.target.value)}
                 />
+              ) : f.addon ? (
+                // A field can carry an `addon` — extra UI rendered beside the
+                // input that can read/replace its value (e.g. the Timesheet
+                // task title's "pick from Note Tag words" button).
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    className="field"
+                    type={f.type || 'text'}
+                    value={values[f.k]}
+                    placeholder={f.placeholder}
+                    onChange={(e) => set(f.k, e.target.value)}
+                    required={f.required}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                  {f.addon({ value: values[f.k], setValue: (val) => set(f.k, val) })}
+                </div>
               ) : (
                 <input
                   className="field"
