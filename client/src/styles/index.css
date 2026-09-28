@@ -336,3 +336,29 @@ textarea.field{resize:vertical;min-height:70px}
 .title-pick-btn{white-space:nowrap}
 .word-list-group{display:flex;align-items:center;gap:6px;padding:8px 18px;font-size:11.5px;font-weight:700;letter-spacing:.02em;background:var(--sunk)}
 .word-list-group .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* --- Tasks: Form Macros extension macros ------------------------------ */
+.macro-list{margin-top:10px;border-top:1px dashed var(--line2);padding-top:8px}
+.macro-list.editing{margin-top:0;border-top:0;padding-top:0}
+.macro-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2);font-weight:600;margin-bottom:6px}
+.macro-head .btn{margin-left:auto;font-family:var(--sans);letter-spacing:0;text-transform:none}
+.macro-head .btn + .btn{margin-left:0}
+.macro-row{border:1px solid var(--line);border-radius:var(--r);padding:7px 9px;margin-bottom:6px;background:var(--panel)}
+.macro-main{display:flex;align-items:center;gap:8px}
+.macro-icon{color:var(--amber);font-size:14px}
+.macro-info{flex:1;min-width:0}
+.macro-name{font-weight:600;font-size:13px}
+.macro-meta{display:flex;align-items:center;gap:8px;margin-top:3px;min-width:0}
+.macro-match{font-family:var(--mono);font-size:11px;color:var(--ink3);max-width:100%}
+.macro-actions{display:flex;gap:5px;flex-shrink:0}
+.macro-steps{margin:6px 0 2px 22px;padding:0 0 0 14px;font-size:12.5px;color:var(--ink2)}
+.macro-steps li{padding:1px 0}
+.macro-steps code{font-family:var(--mono);font-size:11.5px}
+.macro-steps .tag{font-size:9px;padding:1px 6px}
+.macro-list .dim{color:var(--ink3)}
+.macro-flash{font-size:12.5px;padding:6px 10px;border-radius:var(--r);margin-bottom:6px}
+.macro-flash.ok{background:var(--teal-t);color:var(--teal)}
+.macro-flash.err{background:var(--coral-t);color:var(--coral)}
+.macro-pull{border:1px solid var(--line2);border-radius:var(--r);padding:8px 10px;margin-bottom:6px;background:var(--sunk)}
+.macro-pull .macro-head{margin-bottom:4px}
+.checklist-toggle.macros{color:var(--amber)}

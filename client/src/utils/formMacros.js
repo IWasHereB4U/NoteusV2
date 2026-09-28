@@ -34,6 +34,13 @@ export async function detectExtension() {
   }
 }
 
+// Every macro list on the page shares one detection instead of pinging per task.
+let detection = null;
+export function detectExtensionOnce() {
+  if (!detection) detection = detectExtension();
+  return detection;
+}
+
 export function sendToExtension(macros) {
   return request('import', { macros: macros.map(toPlain) }, 60000); // long timeout: user may be reading the confirm dialog
 }
@@ -75,6 +82,11 @@ export function macrosFromFile(data) {
 
 export function toPlain(m) {
   return { name: m.name, match: m.match, steps: m.steps };
+}
+
+// Copy for a task created from an instance: same macros, fresh ids.
+export function cloneMacros(list = [], makeId) {
+  return list.map((m) => ({ ...toPlain(m), id: makeId() }));
 }
 
 export function downloadMacro(m) {

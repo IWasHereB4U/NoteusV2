@@ -1,7 +1,9 @@
 import { useId, useState } from 'react';
 import { Modal } from '../Modal.jsx';
 import { ChecklistEditor } from './Checklist.jsx';
-import { cloneFresh, normalizeLink, pruneEmpty } from './checklist.js';
+import { MacroListEditor } from './MacroList.jsx';
+import { cloneFresh, newItemId, normalizeLink, pruneEmpty } from './checklist.js';
+import { cloneMacros } from '../../utils/formMacros.js';
 
 // One editor for both a Task and a Task Instance — they share name, link,
 // note and the nested checklist. mode="task" adds the task-only fields
@@ -16,6 +18,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
     link: initial.link || '',
     note: initial.note || '',
     checklist: initial.checklist || [],
+    macros: initial.macros || [],
     clientId: initial.clientId || '',
     due: initial.due || '',
     priority: initial.priority || 'normal',
@@ -35,6 +38,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
       link: inst.link || '',
       note: inst.note || '',
       checklist: cloneFresh(inst.checklist),
+      macros: cloneMacros(inst.macros, newItemId),
       fromInstance: inst._id,
     }));
   }
@@ -49,6 +53,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
         link: normalizeLink(values.link),
         note: values.note,
         checklist: pruneEmpty(values.checklist),
+        macros: values.macros.map((m) => ({ ...m, name: (m.name || '').trim() || 'Untitled macro' })),
       };
       await onSubmit(
         isTask
@@ -147,6 +152,11 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
         <div className="field-row">
           <label>Checklist</label>
           <ChecklistEditor items={values.checklist} onChange={(v) => set('checklist', v)} />
+        </div>
+
+        <div className="field-row">
+          <label>Extension macros</label>
+          <MacroListEditor macros={values.macros} onChange={(v) => set('macros', v)} />
         </div>
       </form>
     </Modal>

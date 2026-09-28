@@ -4,9 +4,10 @@ import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
 import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
-import { ExtensionMacrosModal } from '../components/tasks/ExtensionMacrosModal.jsx';
 import { ChecklistView } from '../components/tasks/Checklist.jsx';
-import { cloneFresh, countItems, toggleItem } from '../components/tasks/checklist.js';
+import { MacroListView } from '../components/tasks/MacroList.jsx';
+import { cloneFresh, countItems, newItemId, toggleItem } from '../components/tasks/checklist.js';
+import { cloneMacros } from '../utils/formMacros.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
@@ -27,13 +28,11 @@ export function Tasks() {
   const { items, reload, viewingId } = useResource('/tasks');
   const { items: clients } = useResource('/clients');
   const { items: instances, reload: reloadInstances } = useResource('/task-instances');
-  const { items: macros, reload: reloadMacros } = useResource('/extension-macros');
   const { viewingSelf } = useAuth();
   const [editing, setEditing] = useState(null);
   const [showInstances, setShowInstances] = useState(false);
-  const [showMacros, setShowMacros] = useState(false);
   const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
-  const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist open
+  const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist/macros open
   // Checklist ticks show instantly; the saved copy replaces this on reload.
   const [checklistOverrides, setChecklistOverrides] = useState({});
 
@@ -130,6 +129,7 @@ export function Tasks() {
         link: inst.link || '',
         note: inst.note || '',
         checklist: cloneFresh(inst.checklist),
+        macros: cloneMacros(inst.macros, newItemId),
         clientId: null,
         priority: 'normal',
         fromInstance: inst._id,
@@ -139,45 +139,11 @@ export function Tasks() {
     await reload();
   }
 
-  // --- Extension macros (Form Macros browser extension) ---------------
-  // Same name + URL pattern as an existing macro → its steps are updated,
-  // matching how the extension itself merges imports.
-  async function upsertMacros(list) {
-    let added = 0;
-    let updated = 0;
-    for (const m of list) {
-      const existing = macros.find((x) => x.name === m.name && x.match === m.match);
-      if (existing) {
-        await api.put(`/extension-macros/${existing._id}`, { steps: m.steps }, viewingId || undefined);
-        updated++;
-      } else {
-        await api.post('/extension-macros', m, viewingId || undefined);
-        added++;
-      }
-    }
-    await reloadMacros();
-    return { added, updated };
-  }
-
-  async function updateMacro(id, values) {
-    await api.put(`/extension-macros/${id}`, values, viewingId || undefined);
-    await reloadMacros();
-  }
-
-  async function deleteMacro(m) {
-    if (!confirm(`Delete the macro "${m.name}" from NoteUs? Copies already in your extension are kept.`)) return;
-    await api.del(`/extension-macros/${m._id}`, viewingId || undefined);
-    await reloadMacros();
-  }
-
   return (
     <main className="page">
       <div className="page-head">
         <div><div className="eyebrow">To do</div><h1>Tasks</h1></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn ghost" onClick={() => setShowMacros(true)}>
-            Extension macros{macros.length ? ` (${macros.length})` : ''}
-          </button>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn ghost" onClick={() => setShowInstances(true)}>
             Task instances{instances.length ? ` (${instances.length})` : ''}
           </button>
@@ -205,6 +171,7 @@ export function Tasks() {
                 {g.tasks.map((t) => {
                   const checklist = checklistOf(t);
                   const { total, done } = countItems(checklist);
+                  const macros = t.macros || [];
                   const isOpen = expanded.has(t._id);
                   return (
                     <div key={t._id}>
@@ -236,6 +203,16 @@ export function Tasks() {
                                 {isOpen ? '▾' : '▸'} ☑ {done}/{total}
                               </button>
                             )}
+                            {macros.length > 0 && (
+                              <button
+                                type="button"
+                                className="checklist-toggle macros"
+                                onClick={() => toggleExpanded(t._id)}
+                                title={isOpen ? 'Hide macros' : 'Show extension macros'}
+                              >
+                                {total > 0 ? '' : isOpen ? '▾ ' : '▸ '}⚡ {macros.length} macro{macros.length === 1 ? '' : 's'}
+                              </button>
+                            )}
                           </div>
                           {t.note && <div className="task-note">{t.note}</div>}
                         </div>
@@ -249,13 +226,16 @@ export function Tasks() {
                           </div>
                         )}
                       </div>
-                      {total > 0 && isOpen && (
+                      {isOpen && (total > 0 || macros.length > 0) && (
                         <div style={{ padding: '0 18px 12px 54px' }}>
-                          <ChecklistView
-                            items={checklist}
-                            readOnly={!viewingSelf}
-                            onToggle={(itemId) => toggleChecklistItem(t, itemId)}
-                          />
+                          {total > 0 && (
+                            <ChecklistView
+                              items={checklist}
+                              readOnly={!viewingSelf}
+                              onToggle={(itemId) => toggleChecklistItem(t, itemId)}
+                            />
+                          )}
+                          {macros.length > 0 && <MacroListView macros={macros} />}
                         </div>
                       )}
                     </div>
@@ -290,16 +270,6 @@ export function Tasks() {
         />
       )}
 
-      {showMacros && (
-        <ExtensionMacrosModal
-          macros={macros}
-          canEdit={viewingSelf}
-          onUpsert={upsertMacros}
-          onUpdate={updateMacro}
-          onDelete={deleteMacro}
-          onClose={() => setShowMacros(false)}
-        />
-      )}
     </main>
   );
 }

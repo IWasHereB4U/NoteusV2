@@ -15,6 +15,9 @@ const taskSchema = new mongoose.Schema(
     link: { type: String, default: '' },
     note: { type: String, default: '' },
     checklist: { type: Array, default: [] },
+    // Form Macros browser-extension macros: [{ id, name, match, steps }].
+    // Built in the extension; kept here so each task carries its own.
+    macros: { type: Array, default: [] },
     // The Task Instance this task was created from, if any. Informational
     // only — the task is a full independent copy, so editing either one
     // never touches the other.

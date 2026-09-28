@@ -49,6 +49,9 @@ export function TaskInstancesModal({ instances, canEdit, onCreate, onUpdate, onD
                     <div style={{ fontWeight: 600 }}>{inst.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink3)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       {total > 0 && <span>☑ {total} checklist item{total === 1 ? '' : 's'}</span>}
+                      {inst.macros?.length > 0 && (
+                        <span style={{ color: 'var(--amber)' }}>⚡ {inst.macros.length} macro{inst.macros.length === 1 ? '' : 's'}</span>
+                      )}
                       {inst.link && (
                         <a href={inst.link} target="_blank" rel="noopener noreferrer" className="task-link">🔗 Link</a>
                       )}
