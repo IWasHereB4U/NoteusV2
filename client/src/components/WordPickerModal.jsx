@@ -14,7 +14,10 @@ function tint(hex) {
 // appends it to the title box at the top, which stays a normal text field
 // you can edit by hand. Rendered in a portal so it can open from inside
 // another form without submitting it.
-export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
+// Optional props let other pages reuse it: `titleLabel` renames the title
+// box, and `onWordsPicked` (Meetings) receives the ids of the clicked words
+// that are still in the title on apply, so they can also become tags.
+export function WordPickerModal({ currentTitle = '', onApply, onClose, titleLabel = 'Task title', onWordsPicked }) {
   const [words, setWords] = useState([]);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +26,8 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
   const [activeTags, setActiveTags] = useState([]); // empty = show every tag group
   const [title, setTitle] = useState(currentTitle);
   const titleRef = useRef(null);
+  const [picked, setPicked] = useState([]); // word ids clicked, in order
+  const [alsoTag, setAlsoTag] = useState(true);
 
   // Loaded when the picker opens rather than polled with the page — this
   // is the only place the Timesheet needs Note Tag data.
@@ -70,7 +75,9 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
   // Appends with a single space unless the title is empty or already ends
   // in whitespace. Focus is left where it is (so you can keep clicking
   // words or searching); the box just scrolls to show the end.
-  function append(word) {
+  function append(w) {
+    const word = w.word;
+    setPicked((p) => (p.includes(w._id) ? p : [...p, w._id]));
     setTitle((t) => (!t || /\s$/.test(t) ? t + word : `${t} ${word}`));
     requestAnimationFrame(() => {
       const el = titleRef.current;
@@ -79,7 +86,17 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
   }
 
   function apply() {
-    onApply(title.trim());
+    const finalTitle = title.trim();
+    onApply(finalTitle);
+    if (onWordsPicked && alsoTag) {
+      // Only words that survived any hand edits to the title.
+      const lower = finalTitle.toLowerCase();
+      const ids = picked.filter((id) => {
+        const w = words.find((x) => x._id === id);
+        return w && lower.includes(w.word.toLowerCase());
+      });
+      if (ids.length) onWordsPicked(ids);
+    }
     onClose();
   }
 
@@ -96,7 +113,7 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
       }
     >
       <div className="field-row" style={{ marginBottom: 0 }}>
-        <label htmlFor="word-picker-title">Task title</label>
+        <label htmlFor="word-picker-title">{titleLabel}</label>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             id="word-picker-title"
@@ -121,6 +138,12 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
             Clear
           </button>
         </div>
+        {onWordsPicked && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink2)', marginTop: 8, fontWeight: 500 }}>
+            <input type="checkbox" checked={alsoTag} onChange={(e) => setAlsoTag(e.target.checked)} />
+            Also add the words I click as this meeting's tags
+          </label>
+        )}
       </div>
 
       {/* Filters */}
@@ -184,7 +207,7 @@ export function WordPickerModal({ currentTitle = '', onApply, onClose }) {
                       key={w._id}
                       type="button"
                       className="tag-chip pick"
-                      onClick={() => append(w.word)}
+                      onClick={() => append(w)}
                       title={`Append “${w.word}”`}
                     >
                       {w.word}

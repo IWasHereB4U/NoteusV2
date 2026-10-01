@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Modal } from '../components/Modal.jsx';
+import { WordPickerModal } from '../components/WordPickerModal.jsx';
 import { MeetingWordPicker, WordChip, wordColor, tint } from '../components/MeetingWordPicker.jsx';
 
 export const MEETING_STATUSES = ['Not Completed', 'Ongoing', 'Completed', 'Cancelled'];
@@ -427,6 +428,7 @@ function MeetingModal({ meeting, words, tags, onCreateWord, onSubmit, onClose })
   }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [titlePicker, setTitlePicker] = useState(false);
   const set = (k) => (e) => setV((x) => ({ ...x, [k]: e.target.value }));
 
   async function submit(e) {
@@ -464,7 +466,37 @@ function MeetingModal({ meeting, words, tags, onCreateWord, onSubmit, onClose })
         <div className="field-grid">
           <div className="field-row" style={{ gridColumn: 'span 2' }}>
             <label>Title</label>
-            <input className="field" value={v.title} onChange={set('title')} required autoFocus />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className="field"
+                value={v.title}
+                onChange={set('title')}
+                required
+                autoFocus
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              <button
+                type="button"
+                className="btn ghost sm title-pick-btn"
+                onClick={() => setTitlePicker(true)}
+                title="Build the title from your Note Tag words"
+              >
+                # Words
+              </button>
+            </div>
+            {titlePicker && (
+              <WordPickerModal
+                currentTitle={v.title}
+                titleLabel="Meeting title"
+                onApply={(title) => setV((x) => ({ ...x, title }))}
+                onWordsPicked={
+                  onCreateWord
+                    ? (ids) => setV((x) => ({ ...x, tagWords: [...x.tagWords, ...ids.filter((id) => !x.tagWords.includes(id))] }))
+                    : undefined
+                }
+                onClose={() => setTitlePicker(false)}
+              />
+            )}
           </div>
           <div className="field-row">
             <label>Date</label>
