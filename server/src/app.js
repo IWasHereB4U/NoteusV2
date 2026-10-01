@@ -28,6 +28,7 @@ import TaskInstance from './models/TaskInstance.js';
 import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
 import noteTagRoutes from './routes/noteTags.js';
+import tagWordRoutes from './routes/tagWords.js';
 
 // Just the Express app — no .listen(), no DB connect, no Socket.io
 // attached. Two entry points share this:
@@ -55,6 +56,7 @@ app.use('/api/tasks', resourceRouter(Task, { sortBy: 'due', moduleKey: 'tasks' }
 app.use('/api/task-instances', resourceRouter(TaskInstance, { sortBy: 'name', moduleKey: 'tasks' }));
 app.use('/api/note-tags', noteTagRoutes); // tag delete also untags words
 app.use('/api/note-tags', resourceRouter(NoteTag, { sortBy: 'name', moduleKey: 'notetags' }));
+app.use('/api/tag-words', tagWordRoutes); // word delete also untags meetings
 app.use('/api/tag-words', resourceRouter(TagWord, { sortBy: 'word', moduleKey: 'notetags' }));
 app.use('/api/meetings', resourceRouter(Meeting, { sortBy: 'date', moduleKey: 'meetings' }));
 app.use('/api/filings', resourceRouter(Filing, { sortBy: 'due', moduleKey: 'filing' }));

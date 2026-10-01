@@ -362,3 +362,10 @@ textarea.field{resize:vertical;min-height:70px}
 .macro-pull{border:1px solid var(--line2);border-radius:var(--r);padding:8px 10px;margin-bottom:6px;background:var(--sunk)}
 .macro-pull .macro-head{margin-bottom:4px}
 .checklist-toggle.macros{color:var(--amber)}
+
+/* --- Meetings: sort / group / filter toolbar --------------------------- */
+.meet-toolbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-left:auto}
+@media (max-width: 720px){
+  .meet-toolbar{margin-left:0;width:100%}
+  .meet-toolbar .field.sm{width:100% !important}
+}
