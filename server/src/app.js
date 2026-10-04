@@ -28,6 +28,7 @@ import TaskInstance from './models/TaskInstance.js';
 import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
 import noteTagRoutes from './routes/noteTags.js';
+import Destination from './models/Destination.js'; // MGOctaviano04Oct2026
 
 // Just the Express app — no .listen(), no DB connect, no Socket.io
 // attached. Two entry points share this:
@@ -61,6 +62,7 @@ app.use('/api/filings', resourceRouter(Filing, { sortBy: 'due', moduleKey: 'fili
 app.use('/api/invoices', resourceRouter(Invoice, { sortBy: '-issueDate', moduleKey: 'invoices' }));
 app.use('/api/calendar-events', resourceRouter(CalendarEvent, { sortBy: 'date', moduleKey: 'calendar' }));
 app.use('/api/timesheet-days', resourceRouter(TimesheetDay, { sortBy: '-date', moduleKey: 'timesheet' }));
+app.use('/api/destinations', resourceRouter(Destination, { sortBy: '-updatedAt', moduleKey: 'maps' })); // MGOctaviano04Oct2026
 app.use('/api/note-folders', noteFolderRoutes);
 app.use('/api/note-cards', noteCardRoutes);
 app.use('/api/recurring-rules', recurringRuleRoutes);

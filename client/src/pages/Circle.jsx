@@ -16,6 +16,7 @@ const MODULES = [
   ['filing', 'Filing desk'],
   ['notes', 'Notes'],
   ['notetags', 'Note Tag'],
+  ['maps', 'Maps'], // MGOctaviano04Oct2026
 ];
 
 export function Circle() {
