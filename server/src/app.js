@@ -28,7 +28,8 @@ import TaskInstance from './models/TaskInstance.js';
 import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
 import noteTagRoutes from './routes/noteTags.js';
-import Destination from './models/Destination.js'; // MGOctaviano04Oct2026
+import tagWordRoutes from './routes/tagWords.js';
+import mapDestinationRoutes from './routes/mapDestinations.js';
 
 // Just the Express app — no .listen(), no DB connect, no Socket.io
 // attached. Two entry points share this:
@@ -56,17 +57,18 @@ app.use('/api/tasks', resourceRouter(Task, { sortBy: 'due', moduleKey: 'tasks' }
 app.use('/api/task-instances', resourceRouter(TaskInstance, { sortBy: 'name', moduleKey: 'tasks' }));
 app.use('/api/note-tags', noteTagRoutes); // tag delete also untags words
 app.use('/api/note-tags', resourceRouter(NoteTag, { sortBy: 'name', moduleKey: 'notetags' }));
+app.use('/api/tag-words', tagWordRoutes); // word delete also untags meetings
 app.use('/api/tag-words', resourceRouter(TagWord, { sortBy: 'word', moduleKey: 'notetags' }));
 app.use('/api/meetings', resourceRouter(Meeting, { sortBy: 'date', moduleKey: 'meetings' }));
 app.use('/api/filings', resourceRouter(Filing, { sortBy: 'due', moduleKey: 'filing' }));
 app.use('/api/invoices', resourceRouter(Invoice, { sortBy: '-issueDate', moduleKey: 'invoices' }));
 app.use('/api/calendar-events', resourceRouter(CalendarEvent, { sortBy: 'date', moduleKey: 'calendar' }));
 app.use('/api/timesheet-days', resourceRouter(TimesheetDay, { sortBy: '-date', moduleKey: 'timesheet' }));
-app.use('/api/destinations', resourceRouter(Destination, { sortBy: '-updatedAt', moduleKey: 'maps' })); // MGOctaviano04Oct2026
 app.use('/api/note-folders', noteFolderRoutes);
 app.use('/api/note-cards', noteCardRoutes);
 app.use('/api/recurring-rules', recurringRuleRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/map-destinations', mapDestinationRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
