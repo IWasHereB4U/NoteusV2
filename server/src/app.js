@@ -29,6 +29,7 @@ import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
 import noteTagRoutes from './routes/noteTags.js';
 import tagWordRoutes from './routes/tagWords.js';
+import mapDestinationRoutes from './routes/mapDestinations.js';
 
 // Just the Express app — no .listen(), no DB connect, no Socket.io
 // attached. Two entry points share this:
@@ -67,6 +68,7 @@ app.use('/api/note-folders', noteFolderRoutes);
 app.use('/api/note-cards', noteCardRoutes);
 app.use('/api/recurring-rules', recurringRuleRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/map-destinations', mapDestinationRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
