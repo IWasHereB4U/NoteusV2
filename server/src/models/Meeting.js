@@ -13,6 +13,9 @@ const meetingSchema = new mongoose.Schema(
     location: String, // optional
     notes: String,
     status: { type: String, enum: MEETING_STATUSES, default: 'Not Completed' },
+    // Note Tag words used as this meeting's tags (sort / filter / group on
+    // the Meetings page). A word's own Note Tags act as its category.
+    tagWords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TagWord' }],
   },
   { timestamps: true }
 );
