@@ -19,6 +19,8 @@ const cardSchema = new mongoose.Schema({
   mode: { type: String, required: true, trim: true }, // Jeepney, Bus, Train, ...
   name: { type: String, trim: true }, // e.g. "Angono - Cubao", "LRT-2"
   price: { type: Number, min: 0, default: 0 },
+  // Optional #RRGGBB for this card's line on the map. Empty = use the route's color.
+  color: { type: String, default: '', match: /^(#[0-9a-fA-F]{6})?$/ },
   updatedOn: { type: String, required: true }, // YYYY-MM-DD — when the fare/info was last checked
   from: { type: placeSchema, required: true },
   to: { type: placeSchema, required: true },

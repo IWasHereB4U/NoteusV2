@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { Modal } from '../components/Modal.jsx';
+import { Modal, ColorPickerField } from '../components/Modal.jsx';
 import { PlaceField } from '../components/maps/PlaceField.jsx';
 import { RouteMap } from '../components/maps/RouteMap.jsx';
 import { osrmRoute, shortLabel, fmtDistance, fmtDuration } from '../api/geo.js';
@@ -14,6 +14,7 @@ const MODES = [
 ];
 const MODE_ICON = Object.fromEntries(MODES);
 const ROUTE_COLORS = ['#5B6EE1', '#F1614B', '#0E9C92', '#DB9A2F', '#A253C9', '#2D8BCB'];
+const CARD_PRESETS = ['#5B6EE1', '#F1614B', '#0E9C92', '#DB9A2F', '#A253C9', '#2D8BCB', '#E0457B', '#7A8B2E', '#444444'];
 
 function peso(n) {
   return '₱' + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 });
@@ -135,12 +136,13 @@ function RouteNameModal({ initial, onSubmit, onClose }) {
   );
 }
 
-function CardModal({ initial, defaults, onSubmit, onClose }) {
+function CardModal({ initial, defaults, routeColor, onSubmit, onClose }) {
   const [v, setV] = useState({
     mode: initial?.mode || 'Jeepney',
     name: initial?.name || '',
     price: initial?.price ?? '',
     updatedOn: initial?.updatedOn || todayStr(),
+    color: initial?.color || '', // '' = inherit the route's color
     from: initial?.from || defaults.from || null,
     to: initial?.to || defaults.to || null,
   });
@@ -197,6 +199,15 @@ function CardModal({ initial, defaults, onSubmit, onClose }) {
               <input className="field" type="date" required value={v.updatedOn} onChange={(e) => set('updatedOn', e.target.value)} style={{ flex: 1, minWidth: 0 }} />
               <button type="button" className="btn ghost sm" onClick={() => set('updatedOn', todayStr())}>Today</button>
             </div>
+          </div>
+        </div>
+        <div className="field-row">
+          <label>Line color on the map</label>
+          <ColorPickerField value={v.color || routeColor} onChange={(c) => set('color', c)} presets={CARD_PRESETS} />
+          <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+            {v.color ? (
+              <>Custom color. <button type="button" className="btn ghost sm" onClick={() => set('color', '')}>Use route color</button></>
+            ) : 'Using the route color — pick one to make this card stand out.'}
           </div>
         </div>
         <div className="field-row"><label>From</label><PlaceField value={v.from} onChange={(p) => set('from', p)} placeholder="Where do you board?" /></div>
@@ -401,9 +412,9 @@ export function Maps() {
                               {r.cards.map((c, i) => {
                                 const leg = legs[c._id];
                                 return (
-                                  <article key={c._id} className="tcard" style={{ borderTopColor: r.color }}>
+                                  <article key={c._id} className="tcard" style={{ borderTopColor: c.color || r.color }}>
                                     <div className="tcard-top">
-                                      <span className="tcard-mode">{MODE_ICON[c.mode] || '🧭'} {c.mode}</span>
+                                      <span className="tcard-mode"><i className="tcard-dot" style={{ background: c.color || r.color }} />{MODE_ICON[c.mode] || '🧭'} {c.mode}</span>
                                       <span className="tcard-n">#{i + 1}</span>
                                     </div>
                                     <div className="tcard-name">{c.name || '—'}</div>
@@ -444,7 +455,7 @@ export function Maps() {
         <RouteNameModal initial={modal.route} onSubmit={saveRoute} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'card' && (
-        <CardModal initial={modal.card} defaults={cardDefaults(modal.route)} onSubmit={saveCard} onClose={() => setModal(null)} />
+        <CardModal initial={modal.card} defaults={cardDefaults(modal.route)} routeColor={modal.route.color} onSubmit={saveCard} onClose={() => setModal(null)} />
       )}
     </main>
   );

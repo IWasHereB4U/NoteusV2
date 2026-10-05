@@ -5,7 +5,7 @@ import { useState } from 'react';
 // a hex input for typing/pasting a value, and — where the browser supports
 // it — an eyedropper that samples a color from anywhere on screen (any
 // window, not just this page).
-function ColorPickerField({ value, onChange, presets = [] }) {
+export function ColorPickerField({ value, onChange, presets = [] }) {
   const supportsEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window;
   const [picking, setPicking] = useState(false);
 

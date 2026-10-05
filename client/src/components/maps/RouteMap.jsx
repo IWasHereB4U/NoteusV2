@@ -44,7 +44,7 @@ export function RouteMap({ from, to, routes, legs, activeId }) {
       route.cards.forEach((c) => {
         const leg = legs[c._id];
         const style = {
-          color: route.color,
+          color: c.color || route.color,
           weight: active && activeId ? 7 : 5,
           opacity: active ? 0.9 : dim ? 0.25 : 0.9,
         };
