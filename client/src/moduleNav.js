@@ -16,6 +16,8 @@ export const NAV_ITEMS = [
   { to: '/notes', label: 'Notes', icon: '✎', key: 'notes' },
   { to: '/note-tags', label: 'Note Tag', icon: '#', key: 'notetags' },
   { to: '/maps', label: 'Maps', icon: '⌖', key: 'maps' },
+  // Personal utility, not book data — no `key`, so it isn't gated by circle sharing.
+  { to: '/converter', label: 'File converter', icon: '⇄' },
 ];
 
 // Longest-prefix match so nested routes (e.g. a note card's own URL under

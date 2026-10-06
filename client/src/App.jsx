@@ -19,6 +19,7 @@ import { Circle } from './pages/Circle.jsx';
 import { Notes } from './pages/Notes.jsx';
 import { NoteTags } from './pages/NoteTags.jsx';
 import { Maps } from './pages/Maps.jsx';
+import { Converter } from './pages/Converter.jsx';
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/notes" element={<Notes />} />
             <Route path="/note-tags" element={<NoteTags />} />
             <Route path="/maps" element={<Maps />} />
+            <Route path="/converter" element={<Converter />} />
           </Route>
         </Routes>
         </YardProvider>
