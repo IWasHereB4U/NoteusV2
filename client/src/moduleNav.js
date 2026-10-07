@@ -7,7 +7,8 @@ export const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '◆', end: true },
   { to: '/clients', label: 'Clients', icon: '◔', key: 'clients' },
   { to: '/money', label: 'Money', icon: '◈', key: 'money' },
-  { to: '/invoices', label: 'Invoices', icon: '▤', key: 'invoices' },
+  // MGOctaviano07Oct2026: Invoices removed, Project Timeline added.
+  { to: '/project-timeline', label: 'Project Timeline', icon: '▬', key: 'projecttimeline' },
   { to: '/tasks', label: 'Tasks', icon: '☑', key: 'tasks' },
   { to: '/meetings', label: 'Meetings', icon: '◷', key: 'meetings' },
   { to: '/timesheet', label: 'Timesheet', icon: '▥', key: 'timesheet' },

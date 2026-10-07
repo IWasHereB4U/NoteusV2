@@ -10,7 +10,7 @@ const transactionSchema = new mongoose.Schema(
     note: String,
     amount: { type: Number, required: true },
     status: { type: String, enum: ['paid', 'pending'], default: 'paid' },
-    invoice: String,
+    // MGOctaviano07Oct2026: `invoice` reference field removed along with the Invoices module.
     // Set when this row was materialized from a RecurringRule occurrence,
     // rather than entered by hand — lets the UI mark it and lets deleting
     // a rule leave its already-generated history intact.

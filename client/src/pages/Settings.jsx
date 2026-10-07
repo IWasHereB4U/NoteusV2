@@ -196,18 +196,7 @@ export function Settings() {
               <label>Address</label>
               <textarea className="field" value={biz.address || ''} onChange={(e) => setBiz('address', e.target.value)} />
             </div>
-            <div className="field-row" style={{ gridColumn: 'span 2' }}>
-              <label>Payment instructions on invoices</label>
-              <textarea className="field" value={biz.payTo || ''} onChange={(e) => setBiz('payTo', e.target.value)} />
-            </div>
-            <div className="field-row">
-              <label>Invoice prefix</label>
-              <input className="field" value={biz.prefix || ''} onChange={(e) => setBiz('prefix', e.target.value)} />
-            </div>
-            <div className="field-row">
-              <label>Default payment terms (days)</label>
-              <input className="field" type="number" value={biz.terms || 15} onChange={(e) => setBiz('terms', Number(e.target.value))} />
-            </div>
+            {/* MGOctaviano07Oct2026: invoice-only fields (payment instructions, prefix, terms) removed */}
           </div>
         </div>
         <div className="modal-f">

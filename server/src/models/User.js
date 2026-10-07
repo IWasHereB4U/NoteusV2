@@ -5,7 +5,8 @@ import bcrypt from 'bcryptjs';
 // view — kept here (not derived from the route table) so the client and
 // server agree on the same fixed list without importing across the
 // client/server boundary.
-export const MODULE_KEYS = ['clients', 'money', 'invoices', 'tasks', 'meetings', 'timesheet', 'calendar', 'filing', 'notes', 'notetags', 'maps'];
+// MGOctaviano07Oct2026: 'invoices' replaced by 'projecttimeline'.
+export const MODULE_KEYS = ['clients', 'money', 'projecttimeline', 'tasks', 'meetings', 'timesheet', 'calendar', 'filing', 'notes', 'notetags', 'maps'];
 
 const userSchema = new mongoose.Schema(
   {

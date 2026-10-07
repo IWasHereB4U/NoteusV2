@@ -21,7 +21,8 @@ import Transaction from './models/Transaction.js';
 import Task from './models/Task.js';
 import Meeting from './models/Meeting.js';
 import Filing from './models/Filing.js';
-import Invoice from './models/Invoice.js';
+// MGOctaviano07Oct2026: Invoice module removed; Project Timeline added.
+import projectTimelineRoutes from './routes/projectTimelines.js';
 import CalendarEvent from './models/CalendarEvent.js';
 import TimesheetDay from './models/TimesheetDay.js';
 import TaskInstance from './models/TaskInstance.js';
@@ -61,7 +62,8 @@ app.use('/api/tag-words', tagWordRoutes); // word delete also untags meetings
 app.use('/api/tag-words', resourceRouter(TagWord, { sortBy: 'word', moduleKey: 'notetags' }));
 app.use('/api/meetings', resourceRouter(Meeting, { sortBy: 'date', moduleKey: 'meetings' }));
 app.use('/api/filings', resourceRouter(Filing, { sortBy: 'due', moduleKey: 'filing' }));
-app.use('/api/invoices', resourceRouter(Invoice, { sortBy: '-issueDate', moduleKey: 'invoices' }));
+// MGOctaviano07Oct2026: /api/invoices removed.
+app.use('/api/project-timelines', projectTimelineRoutes);
 app.use('/api/calendar-events', resourceRouter(CalendarEvent, { sortBy: 'date', moduleKey: 'calendar' }));
 app.use('/api/timesheet-days', resourceRouter(TimesheetDay, { sortBy: '-date', moduleKey: 'timesheet' }));
 app.use('/api/note-folders', noteFolderRoutes);

@@ -123,7 +123,11 @@ export async function updateColor(req, res) {
 // member's own circle entry, so it never touches what anyone else sees.
 export async function updateSharedModulesForMember(req, res) {
   const { userId } = req.params;
-  const { sharedModules } = req.body;
+  // MGOctaviano07Oct2026: circle entries saved before the Invoices module was removed may
+  // still carry the retired 'invoices' key — drop it instead of rejecting.
+  const sharedModules = Array.isArray(req.body.sharedModules)
+    ? req.body.sharedModules.filter((k) => k !== 'invoices')
+    : req.body.sharedModules;
   if (!Array.isArray(sharedModules) || !sharedModules.every((k) => MODULE_KEYS.includes(k))) {
     return res.status(400).json({ error: 'sharedModules must be a list of known module keys' });
   }

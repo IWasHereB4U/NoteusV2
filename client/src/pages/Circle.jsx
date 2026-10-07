@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 const MODULES = [
   ['clients', 'Clients'],
   ['money', 'Money'],
-  ['invoices', 'Invoices'],
+  ['projecttimeline', 'Project Timeline'], // MGOctaviano07Oct2026: replaced Invoices
   ['tasks', 'Tasks'],
   ['meetings', 'Meetings'],
   ['timesheet', 'Timesheet'],
@@ -53,9 +53,11 @@ export function Circle() {
   }
 
   async function toggleModule(person, key) {
-    const next = person.sharedModules.includes(key)
-      ? person.sharedModules.filter((k) => k !== key)
-      : [...person.sharedModules, key];
+    // MGOctaviano07Oct2026: only send keys the app still knows (drops the retired 'invoices').
+    const known = person.sharedModules.filter((k) => MODULES.some(([m]) => m === k));
+    const next = known.includes(key)
+      ? known.filter((k) => k !== key)
+      : [...known, key];
     setSavingFor(person.id);
     try {
       await updateSharedModulesFor(person.id, next);

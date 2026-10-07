@@ -10,11 +10,7 @@ const settingsSchema = new mongoose.Schema(
       phone: String,
       tin: String,
       address: String,
-      payTo: String,
-      prefix: { type: String, default: 'INV-' },
-      next: { type: Number, default: 1 },
-      terms: { type: Number, default: 15 },
-      footer: String,
+      // MGOctaviano07Oct2026: invoice-only fields (payTo, prefix, next, terms, footer) removed.
     },
     tax: {
       mixed: { type: Boolean, default: false },

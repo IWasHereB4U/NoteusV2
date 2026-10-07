@@ -16,9 +16,10 @@ export function Dashboard() {
     Promise.all([
       api.get('/transactions', va),
       api.get('/tasks', va),
-      api.get('/invoices', va),
+      // MGOctaviano07Oct2026: was /invoices. Tolerate a 403 (module not shared) so the dashboard still loads.
+      api.get('/project-timelines', va).catch(() => []),
       api.get('/filings', va),
-    ]).then(([tx, tasks, invoices, filings]) => setData({ tx, tasks, invoices, filings }));
+    ]).then(([tx, tasks, projects, filings]) => setData({ tx, tasks, projects, filings }));
   }, [viewingId]);
 
   if (!data) return <main className="page">Loading…</main>;
@@ -26,7 +27,12 @@ export function Dashboard() {
   const income = data.tx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = data.tx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const openTasks = data.tasks.filter((t) => !t.done).length;
-  const outstandingInvoices = data.invoices.filter((i) => i.status !== 'paid').length;
+  // MGOctaviano07Oct2026: replaces the invoices summary. A project is "open" until every phase has a finished date.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const openProjects = data.projects.filter((p) => (p.phases || []).some((ph) => !ph.finishedDate));
+  const overdueProjects = openProjects.filter((p) =>
+    (p.phases || []).some((ph) => !ph.finishedDate && ph.deadlineDate && ph.deadlineDate < todayISO)
+  ).length;
   const filingsDue = data.filings.filter((f) => f.status !== 'filed').length;
 
   return (
@@ -49,10 +55,12 @@ export function Dashboard() {
 
       <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="card">
-          <div className="card-h"><h2>Invoices</h2></div>
+          <div className="card-h"><h2>Project Timeline</h2></div>
           <div className="card-b">
             <p style={{ margin: 0, color: 'var(--ink2)' }}>
-              {outstandingInvoices === 0 ? 'Nothing outstanding.' : `${outstandingInvoices} invoice(s) not yet paid.`}
+              {openProjects.length === 0
+                ? 'No open projects.'
+                : `${openProjects.length} open project(s)${overdueProjects ? `, ${overdueProjects} past deadline` : ''}.`}
             </p>
           </div>
         </div>
