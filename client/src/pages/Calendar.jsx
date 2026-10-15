@@ -100,9 +100,10 @@ export function Calendar() {
   }
 
   async function remove(id) {
-    if (!confirm('Delete this event?')) return;
+    if (!confirm('Delete this event?')) return false;
     await api.del(`/calendar-events/${id}`, viewingId || undefined);
-    reload();
+    await reload();
+    return true;
   }
 
   async function setEventStatus(it, status) {
@@ -166,6 +167,7 @@ export function Calendar() {
           fields={EVENT_FIELDS}
           initial={{ ...editing, allDay: editing.allDay ? 'yes' : 'no', status: editing.status || 'Not Completed' }}
           onSubmit={save}
+          onDelete={editing._id && viewingSelf ? () => remove(editing._id) : undefined}
           onClose={() => setEditing(null)}
         />
       )}

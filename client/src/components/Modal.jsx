@@ -96,7 +96,8 @@ export function Modal({ title, onClose, children, footer, width }) {
 
 // Renders a form from a small field spec, mirroring the original app's
 // declarative `form()` helper: [{k,label,type,options,value,half}]
-export function FormModal({ title, fields, initial = {}, onSubmit, onClose, submitLabel = 'Save' }) {
+// Optional `onDelete` adds a Delete button to the footer (edit dialogs).
+export function FormModal({ title, fields, initial = {}, onSubmit, onClose, onDelete, submitLabel = 'Save' }) {
   const [values, setValues] = useState(() => {
     const v = {};
     fields.forEach((f) => (v[f.k] = initial[f.k] ?? f.value ?? ''));
@@ -107,6 +108,19 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
 
   function set(k, val) {
     setValues((v) => ({ ...v, [k]: val }));
+  }
+
+  async function handleDelete() {
+    setSaving(true);
+    setError('');
+    try {
+      const done = await onDelete();
+      if (done === false) { setSaving(false); return; } // user cancelled the confirm
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+      setSaving(false);
+    }
   }
 
   async function submit(e) {
@@ -129,6 +143,17 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
       onClose={onClose}
       footer={
         <>
+          {onDelete && (
+            <button
+              className="btn danger"
+              type="button"
+              onClick={handleDelete}
+              disabled={saving}
+              style={{ marginRight: 'auto' }}
+            >
+              Delete
+            </button>
+          )}
           <button className="btn ghost" onClick={onClose} type="button">Cancel</button>
           <button className="btn" form="modal-form" disabled={saving}>
             {saving ? 'Saving…' : submitLabel}
