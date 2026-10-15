@@ -25,6 +25,7 @@ import Filing from './models/Filing.js';
 import projectTimelineRoutes from './routes/projectTimelines.js';
 import CalendarEvent from './models/CalendarEvent.js';
 import TimesheetDay from './models/TimesheetDay.js';
+import TimesheetPreset from './models/TimesheetPreset.js';
 import TaskInstance from './models/TaskInstance.js';
 import NoteTag from './models/NoteTag.js';
 import TagWord from './models/TagWord.js';
@@ -66,6 +67,7 @@ app.use('/api/filings', resourceRouter(Filing, { sortBy: 'due', moduleKey: 'fili
 app.use('/api/project-timelines', projectTimelineRoutes);
 app.use('/api/calendar-events', resourceRouter(CalendarEvent, { sortBy: 'date', moduleKey: 'calendar' }));
 app.use('/api/timesheet-days', resourceRouter(TimesheetDay, { sortBy: '-date', moduleKey: 'timesheet' }));
+app.use('/api/timesheet-presets', resourceRouter(TimesheetPreset, { sortBy: 'name', moduleKey: 'timesheet' }));
 app.use('/api/note-folders', noteFolderRoutes);
 app.use('/api/note-cards', noteCardRoutes);
 app.use('/api/recurring-rules', recurringRuleRoutes);

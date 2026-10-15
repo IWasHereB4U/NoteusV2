@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { FormModal } from '../components/Modal.jsx';
+import { FormModal, Modal } from '../components/Modal.jsx';
 import { WordPickerModal } from '../components/WordPickerModal.jsx';
 
 const COLORS = ['#0E9C92', '#F1614B', '#DB9A2F', '#5B6EE1', '#9B5DE5'];
@@ -61,6 +61,12 @@ function TitleWordPicker({ value, setValue }) {
     </>
   );
 }
+
+// Saving a work day as a preset only needs a name — the times and tasks
+// are snapshotted from the day itself.
+const PRESET_FIELDS = [
+  { k: 'name', label: 'Preset name', required: true, placeholder: 'e.g. Regular office day' },
+];
 
 const TASK_FIELDS = [
   {
@@ -308,6 +314,9 @@ export function Timesheet() {
   const [copyState, setCopyState] = useState('idle'); // 'idle' | 'copied' | 'error'
   const [collapsedIds, setCollapsedIds] = useState(() => new Set()); // day._id's currently collapsed
   const [showCalendar, setShowCalendar] = useState(false);
+  const { items: presets, reload: reloadPresets } = useResource('/timesheet-presets');
+  const [savingPresetDay, setSavingPresetDay] = useState(null); // work day being saved as a preset
+  const [showPresets, setShowPresets] = useState(false);
   const dayRefs = useRef({});
 
   const sorted = useMemo(
@@ -405,6 +414,56 @@ export function Timesheet() {
       );
     }
     await reload();
+  }
+
+  // Snapshots a day's start/end and every task/timeskip (in order) into a
+  // reusable preset.
+  async function savePreset(values) {
+    const day = savingPresetDay;
+    await api.post(
+      '/timesheet-presets',
+      {
+        name: values.name.trim(),
+        startTime: day.startTime,
+        endTime: day.endTime,
+        tasks: (day.tasks || []).map(cloneTask),
+      },
+      viewingId || undefined
+    );
+    await reloadPresets();
+  }
+
+  async function removePreset(id) {
+    if (!confirm('Delete this preset? Work days already created from it are not affected.')) return;
+    await api.del(`/timesheet-presets/${id}`, viewingId || undefined);
+    await reloadPresets();
+  }
+
+  // Creates a work day on `date` straight from a preset. If that date
+  // already has a day, the preset's tasks are appended to it (after a
+  // confirm) instead of making a duplicate day. Returns false if the
+  // person backed out.
+  async function applyPreset(preset, date) {
+    if (!date) throw new Error('Pick a date first');
+    const tasks = (preset.tasks || []).map(cloneTask);
+    const existing = days.find((d) => d.date === date);
+    if (existing) {
+      const ok = confirm(`${date} already has a work day. Add "${preset.name}" tasks to the end of it?`);
+      if (!ok) return false;
+      await api.put(
+        `/timesheet-days/${existing._id}`,
+        { tasks: [...existing.tasks, ...tasks] },
+        viewingId || undefined
+      );
+    } else {
+      await api.post(
+        '/timesheet-days',
+        { date, startTime: preset.startTime, endTime: preset.endTime, status: 'Draft', tasks },
+        viewingId || undefined
+      );
+    }
+    await reload();
+    return true;
   }
 
   async function setDayStatus(day, status) {
@@ -513,6 +572,11 @@ export function Timesheet() {
             </button>
           )}
           {viewingSelf && (
+            <button className="btn ghost" onClick={() => setShowPresets(true)} title="Add a work day from a saved preset">
+              ⚡ From preset{presets.length > 0 ? ` (${presets.length})` : ''}
+            </button>
+          )}
+          {viewingSelf && (
             <button className="btn" onClick={() => setEditingDay({ date: '', startTime: '09:00', endTime: '17:00', status: 'Draft' })}>
               + Add work day
             </button>
@@ -534,6 +598,7 @@ export function Timesheet() {
                 onEditDay={() => setEditingDay(day)}
                 onDeleteDay={() => removeDay(day._id)}
                 onDuplicateDay={() => setDuplicatingDay(day)}
+                onSavePreset={() => setSavingPresetDay(day)}
                 onSetStatus={(status) => setDayStatus(day, status)}
                 onAddTask={() => setTaskCtx({ day, task: null, type: 'task' })}
                 onAddTimeskip={() => setTaskCtx({ day, task: null, type: 'timeskip' })}
@@ -569,6 +634,27 @@ export function Timesheet() {
         />
       )}
 
+      {savingPresetDay && (
+        <FormModal
+          title="Save as preset"
+          fields={PRESET_FIELDS}
+          initial={{ name: '' }}
+          submitLabel="Save preset"
+          onSubmit={savePreset}
+          onClose={() => setSavingPresetDay(null)}
+        />
+      )}
+
+      {showPresets && (
+        <PresetsModal
+          presets={presets}
+          days={days}
+          onApply={applyPreset}
+          onDelete={removePreset}
+          onClose={() => setShowPresets(false)}
+        />
+      )}
+
       {taskCtx && (() => {
         const isSkip = (taskCtx.task?.type ?? taskCtx.type) === 'timeskip';
         return (
@@ -589,7 +675,85 @@ export function Timesheet() {
   );
 }
 
-function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay, onDeleteDay, onDuplicateDay, onSetStatus, onAddTask, onAddTimeskip, onEditTask, onDeleteTask, onDuplicateTask, onReorderTasks, onCopyDay }) {
+// Lists saved work-day presets. Pick a date once, hit Add on any preset and
+// the day (times + all tasks/timeskips) is created immediately. The modal
+// stays open and the date steps forward a day after each add, so filling a
+// week is just repeated clicks with no re-entering of tasks.
+function PresetsModal({ presets, days, onApply, onDelete, onClose }) {
+  const [date, setDate] = useState(() => {
+    const latest = days.map((d) => d.date).filter(Boolean).sort().pop();
+    return latest ? nextDateISO(latest) : iso(new Date());
+  });
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  async function add(preset) {
+    setBusyId(preset._id);
+    setError('');
+    setMessage('');
+    try {
+      const added = await onApply(preset, date);
+      if (added) {
+        setMessage(`Added "${preset.name}" to ${date}`);
+        setDate(nextDateISO(date));
+      }
+    } catch (err) {
+      setError(err.message || 'Could not add that preset');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const summarize = (p) => {
+    const taskCount = (p.tasks || []).filter((t) => t.type !== 'timeskip').length;
+    const skipCount = (p.tasks || []).length - taskCount;
+    const mins = (p.tasks || [])
+      .filter((t) => t.type !== 'timeskip')
+      .reduce((sum, t) => sum + Number(t.hours || 0) * 60 + Number(t.minutes || 0), 0);
+    const parts = [];
+    if (p.startTime) parts.push(`${fmtClock(p.startTime)}${p.endTime ? ` – ${fmtClock(p.endTime)}` : ''}`);
+    parts.push(`${taskCount} task${taskCount === 1 ? '' : 's'}`);
+    if (skipCount) parts.push(`${skipCount} timeskip${skipCount === 1 ? '' : 's'}`);
+    if (mins) parts.push(formatHM(Math.floor(mins / 60), mins % 60));
+    return parts.join(' · ');
+  };
+
+  return (
+    <Modal title="Add work day from preset" onClose={onClose} width={560}>
+      {error && <div className="auth-error">{error}</div>}
+      <div className="field-row" style={{ marginBottom: 14 }}>
+        <label>Date for the new work day</label>
+        <input className="field" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
+      {message && <div style={{ fontSize: 12.5, color: 'var(--teal)', marginBottom: 10 }}>✓ {message}</div>}
+
+      {presets.length === 0 ? (
+        <div className="empty">
+          <b>No presets yet</b>
+          Use "Save preset" on a work day to keep its times and tasks for reuse.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {presets.map((p) => (
+            <div key={p._id} className="row" style={{ gridTemplateColumns: '1fr auto auto', padding: '10px 4px' }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink3)' }}>{summarize(p)}</div>
+              </div>
+              <button className="btn sm" disabled={busyId === p._id || !date} onClick={() => add(p)}>
+                {busyId === p._id ? 'Adding…' : 'Add'}
+              </button>
+              <button className="btn danger sm" onClick={() => onDelete(p._id)} title="Delete preset">Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay, onDeleteDay, onDuplicateDay, onSavePreset, onSetStatus, onAddTask, onAddTimeskip, onEditTask, onDeleteTask, onDuplicateTask, onReorderTasks, onCopyDay }) {
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const plannedHours = hoursBetween(day.startTime, day.endTime);
@@ -663,6 +827,7 @@ function WorkdayCard({ day, viewingSelf, collapsed, onToggleCollapsed, onEditDay
             <>
               <button className="btn ghost sm" onClick={onEditDay}>Edit</button>
               <button className="btn ghost sm" onClick={onDuplicateDay} title="Copy this day and all its tasks to another date">Duplicate</button>
+              <button className="btn ghost sm" onClick={onSavePreset} title="Save this day's times and tasks as a reusable preset">Save preset</button>
               <button className="btn danger sm" onClick={onDeleteDay}>Delete</button>
             </>
           )}
