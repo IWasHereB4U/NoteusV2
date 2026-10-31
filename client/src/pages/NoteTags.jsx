@@ -3,33 +3,7 @@ import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Modal } from '../components/Modal.jsx';
-
-const TAG_COLORS = ['#0E9C92', '#F1614B', '#DB9A2F', '#5B6EE1', '#9B5DE5', '#1F9D6B', '#C0392B', '#8A8F8E'];
-
-// Soft background for a colored chip: the tag color at ~15% opacity.
-function tint(hex) {
-  return /^#[0-9a-f]{6}$/i.test(hex || '') ? `${hex}26` : 'var(--line)';
-}
-
-function TagChip({ tag, selected, onClick, small }) {
-  const color = tag?.color || '#8A8F8E';
-  const style = selected || !onClick
-    ? { background: tint(color), color, borderColor: 'transparent' }
-    : undefined;
-  const Tag = onClick ? 'button' : 'span';
-  return (
-    <Tag
-      type={onClick ? 'button' : undefined}
-      className={`tag-chip ${onClick ? 'pick' : ''}`}
-      style={{ ...style, ...(small ? { fontSize: 11, padding: '2px 8px' } : null) }}
-      onClick={onClick}
-      aria-pressed={onClick ? !!selected : undefined}
-    >
-      <span className="dot" style={{ background: color }} />
-      {tag?.name || 'Unknown tag'}
-    </Tag>
-  );
-}
+import { TagChip, tint, TAG_COLORS } from '../components/TagChip.jsx';
 
 // Toggleable row of every tag, for picking which ones a word carries.
 function TagPicker({ tags, value, onChange, onManage }) {

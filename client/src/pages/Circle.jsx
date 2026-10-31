@@ -16,7 +16,8 @@ const MODULES = [
   ['filing', 'Filing desk'],
   ['notes', 'Notes'],
   ['notetags', 'Note Tag'],
-  ['maps', 'Maps'],
+  ['maps', 'Destination'], // key stays `maps` so existing sharing settings still apply
+  ['poi', 'Point of Interest'],
 ];
 
 export function Circle() {

@@ -23,6 +23,7 @@ export function Notes() {
   const [currentFolder, setCurrentFolder] = useState(null);
   const [pendingUnlock, setPendingUnlock] = useState(null); // folder awaiting password
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState(null); // folder being renamed
   const [cards, setCards] = useState([]);
   const [sortBy, setSortBy] = useState('updated'); // 'updated' | 'name'
   const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
@@ -83,6 +84,16 @@ export function Notes() {
       { name: values.name, password: values.password || undefined, parent: currentFolder?._id || null },
       viewingId || undefined
     );
+    await loadFolders();
+  }
+
+  // Name only — the server's PUT already takes a bare { name } patch and
+  // leaves the password and editors untouched.
+  async function renameFolder(values) {
+    const name = (values.name || '').trim();
+    if (!name) throw new Error('Folder needs a name');
+    const updated = await notesApi.renameFolder(renamingFolder._id, { name }, viewingId || undefined);
+    if (currentFolder?._id === renamingFolder._id) setCurrentFolder((f) => ({ ...f, name: updated.name }));
     await loadFolders();
   }
 
@@ -218,6 +229,7 @@ export function Notes() {
                   )}
                   {viewingSelf && (
                     <>
+                      <button className="btn ghost sm" onClick={() => setRenamingFolder(currentFolder)}>Rename</button>
                       <button className="btn ghost sm" onClick={() => setManagingEditorsFor({ kind: 'folder', item: currentFolder })}>Share</button>
                       <button className="btn danger sm" onClick={() => deleteFolder(currentFolder)}>Delete folder</button>
                     </>
@@ -260,6 +272,16 @@ export function Notes() {
           fields={FOLDER_FIELDS}
           onSubmit={createFolder}
           onClose={() => setCreatingFolder(false)}
+        />
+      )}
+
+      {renamingFolder && (
+        <FormModal
+          title="Rename folder"
+          fields={[{ k: 'name', label: 'Folder name', required: true }]}
+          initial={{ name: renamingFolder.name }}
+          onSubmit={renameFolder}
+          onClose={() => setRenamingFolder(null)}
         />
       )}
 

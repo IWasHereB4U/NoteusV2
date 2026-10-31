@@ -73,6 +73,22 @@ a{color:inherit}
 .icon-rail a:hover, .icon-rail button:hover{background:#182524;color:#fff}
 .icon-rail a.on, .icon-rail button.on{background:var(--teal);color:var(--ink)}
 .icon-rail .spacer{flex:1}
+/* Many modules now: let the rail scroll rather than clip, without a visible bar. */
+.icon-rail{overflow-y:auto;scrollbar-width:none}
+.icon-rail::-webkit-scrollbar{display:none}
+.icon-rail > *{flex-shrink:0}
+
+/* Collapsible categories */
+.rail-group{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;margin-top:6px;padding-top:4px;border-top:1px solid #1E2F2D}
+.icon-rail .rail-group-h{
+  width:52px;height:auto;padding:4px 0;border-radius:6px;gap:3px;
+  font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:#6F8582;font-weight:600;
+}
+.icon-rail .rail-group-h:hover{background:none;color:#fff}
+.rail-chev{font-size:8px}
+.rail-count{font-size:8px;background:#182524;color:#9FB3B0;border-radius:8px;padding:0 4px;letter-spacing:0}
+[data-theme="dark"] .rail-group{border-top-color:#142321}
 
 .main-col{flex:1; min-width:0; display:flex; flex-direction:column}
 
@@ -257,6 +273,10 @@ textarea.field{resize:vertical;min-height:70px}
   .icon-rail .mark{margin:0 6px 0 0; flex-shrink:0}
   .icon-rail a, .icon-rail button{flex-shrink:0}
   .icon-rail .spacer{display:none}
+  .icon-rail{overflow-y:hidden;overflow-x:auto}
+  /* Categories run inline along the strip; the header becomes a small pill. */
+  .rail-group{flex-direction:row;width:auto;margin:0 0 0 4px;padding:0 0 0 8px;border-top:0;border-left:1px solid #1E2F2D}
+  .icon-rail .rail-group-h{width:auto;height:42px;flex-direction:row;padding:0 6px}
   .main-col{min-width:0}
 }
 
@@ -519,4 +539,63 @@ textarea.field{resize:vertical;min-height:70px}
   .pt-mday{min-height:70px}
   .pt-bar-t{display:none}
   .pt-toolbar-r{margin-left:0}
+}
+
+/* ---- Point of Interest ---- */
+.poi-map{height:460px;width:100%;z-index:0;border-radius:var(--r-lg) var(--r-lg) 0 0}
+.poi-list-scroll{max-height:60vh;overflow:auto}
+.field-row label .opt{font-weight:500;color:var(--ink3)}
+
+/* round badge: photo or flag on the tag color — same look in the list and on the map */
+.poi-thumb{--pin:var(--teal);width:36px;height:36px;border-radius:50%;flex:none;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:var(--pin);color:#fff;font-size:15px;border:2px solid var(--pin);box-shadow:0 0 0 1px var(--line2)}
+.poi-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.poi-thumb.lg{width:56px;height:56px;font-size:22px}
+.poi-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-left:3px solid transparent;border-bottom:1px solid var(--line);padding:10px 14px;cursor:pointer;font:inherit;color:var(--ink)}
+.poi-item:hover{background:var(--sunk)}
+.poi-item.on{background:var(--teal-t);border-left-color:var(--teal)}
+.poi-item-body{display:flex;flex-direction:column;min-width:0;flex:1}
+.poi-item-name{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.poi-item-sub{font-size:11.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.poi-status{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:20px;white-space:nowrap;flex:none;margin-left:4px}
+.poi-status.on{background:var(--teal-t);color:var(--teal)}
+.poi-status.soon{background:var(--amber-t);color:var(--amber)}
+.poi-status.off{background:var(--sunk);color:var(--ink3)}
+
+/* map pin (Leaflet divIcon) */
+.poi-pin-wrap{background:none;border:0}
+.poi-pin{--pin:#0E9C92;position:relative;width:44px;height:54px}
+.poi-pin-face{width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--pin);border:3px solid var(--pin);box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px}
+.poi-pin-face img{width:100%;height:100%;object-fit:cover;display:block;background:#fff}
+.poi-pin::after{content:"";position:absolute;left:50%;bottom:2px;transform:translateX(-50%);border:7px solid transparent;border-top:9px solid var(--pin);border-bottom:0}
+.poi-popup img{display:block;width:100%;max-height:130px;object-fit:cover;border-radius:6px;margin-bottom:6px}
+.poi-popup-name{font-weight:700;font-size:14px}
+.poi-popup-desc{font-size:12.5px;margin-top:3px;white-space:pre-wrap}
+.poi-popup-when{font-size:11.5px;color:#5b6b69;margin-top:5px}
+
+/* selected place */
+.poi-detail{display:flex;gap:16px;padding:16px 18px;align-items:flex-start}
+.poi-detail-img{width:200px;max-width:40%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r);flex:none;background:var(--sunk)}
+.poi-detail-body{display:flex;flex-direction:column;gap:10px;min-width:0;flex:1}
+.poi-desc{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px}
+
+/* schedule editor */
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:var(--r);overflow:hidden;align-self:flex-start}
+.seg button{background:var(--panel);border:0;border-right:1px solid var(--line2);padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink2)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+[data-theme="dark"] .seg button.on{background:#060D0C}
+.sched-box{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;background:var(--sunk);margin-bottom:12px}
+.sched-hint{font-size:12px;color:var(--ink3);margin-bottom:10px}
+.sched-day{display:grid;grid-template-columns:minmax(110px,1fr) 118px auto 118px;gap:8px;align-items:center;padding:3px 0;opacity:.6}
+.sched-day.on{opacity:1}
+.sched-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer}
+.sched-to{font-size:12px;color:var(--ink3)}
+.sched-day .field{padding:6px 8px;font-size:13px}
+@media (max-width:640px){
+  .poi-map{height:320px}
+  .poi-detail{flex-direction:column}
+  .poi-detail-img{width:100%;max-width:100%}
+  .sched-day{grid-template-columns:1fr 1fr;}
+  .sched-day .sched-check{grid-column:1 / -1}
+  .sched-to{display:none}
 }
