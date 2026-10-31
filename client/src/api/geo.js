@@ -78,3 +78,27 @@ export function fmtDuration(s) {
   const m = mins % 60;
   return m ? `${h} h ${m} min` : `${h} h`;
 }
+
+// Address for a map click (Nominatim reverse geocoding). Returns a label
+// string, or null when nothing useful is there (open sea, no data, offline) —
+// callers fall back to the raw coordinates.
+export async function reversePlace(lat, lon, signal) {
+  const url = new URL(NOMINATIM + '/reverse');
+  url.searchParams.set('lat', lat);
+  url.searchParams.set('lon', lon);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('zoom', '18');
+  const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.display_name || null;
+}
+
+// "14.5995, 120.9842" (or "lat lon") typed straight into a place box.
+export function parseCoords(text) {
+  const m = String(text).trim().match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lon = Number(m[2]);
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
+}

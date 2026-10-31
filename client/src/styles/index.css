@@ -599,3 +599,9 @@ textarea.field{resize:vertical;min-height:70px}
   .sched-day .sched-check{grid-column:1 / -1}
   .sched-to{display:none}
 }
+
+/* ---- Map picker ---- */
+.picker-map{height:380px;width:100%;border-radius:var(--r);border:1px solid var(--line2);z-index:0;cursor:crosshair}
+.place-results .linkish{display:inline;width:auto;border:0;padding:0;background:none;color:var(--teal);font-weight:600;text-decoration:underline;cursor:pointer;font-size:inherit}
+.place-results .linkish:hover{background:none}
+@media (max-width:640px){.picker-map{height:300px}}

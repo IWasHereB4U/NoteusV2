@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { searchPlaces } from '../../api/geo.js';
+import { searchPlaces, parseCoords } from '../../api/geo.js';
+import { MapPickerModal } from './MapPickerModal.jsx';
 
 // Pick a place by searching OpenStreetMap (Nominatim). `value` is
 // {label, lat, lon} or null. Search runs on Enter / the Search button —
@@ -9,6 +10,7 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
   const [results, setResults] = useState(null); // null = nothing searched yet
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [picking, setPicking] = useState(false);
   const abort = useRef(null);
 
   // Keep the input in step when the parent swaps the value (e.g. the next
@@ -21,6 +23,12 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
 
   async function run() {
     if (!text.trim()) return;
+    // Typed coordinates ("14.5995, 120.9842") are used as-is.
+    const c = parseCoords(text);
+    if (c) {
+      pick({ label: `Pinned location (${c.lat}, ${c.lon})`, ...c });
+      return;
+    }
     abort.current?.abort();
     abort.current = new AbortController();
     setBusy(true);
@@ -62,6 +70,9 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
         <button type="button" className="btn ghost sm" onClick={run} disabled={busy || !text.trim()}>
           {busy ? '…' : 'Search'}
         </button>
+        <button type="button" className="btn ghost sm" onClick={() => setPicking(true)} title="Can't find it? Drop a pin on the map">
+          📍 Map
+        </button>
       </div>
       {value && (
         <div className="place-ok">✓ {value.lat.toFixed(4)}, {value.lon.toFixed(4)}</div>
@@ -70,7 +81,10 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
       {results && (
         <div className="place-results">
           {results.length === 0 ? (
-            <div className="place-none">No matches — try a more specific name.</div>
+            <div className="place-none">
+              No matches — try a more specific name, or{' '}
+              <button type="button" className="linkish" onClick={() => setPicking(true)}>pick it on the map</button>.
+            </div>
           ) : (
             results.map((r, i) => (
               <button type="button" key={i} onClick={() => pick(r)}>
@@ -79,6 +93,13 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
             ))
           )}
         </div>
+      )}
+      {picking && (
+        <MapPickerModal
+          initial={value}
+          onClose={() => setPicking(false)}
+          onPick={(p) => { setPicking(false); pick(p); }}
+        />
       )}
     </div>
   );
