@@ -229,3 +229,38 @@ export async function generate(ExcelJS, attendanceData, templates, onStatus, ove
   const prepared = await prepare(ExcelJS, attendanceData, templates);
   return finish(prepared, overrides, onStatus, punchFixes);
 }
+
+// Download helper for the review dialogs: the list of days as a small .xlsx.
+// `rows` are the review items; `choiceOf(row)` gives the text for "What to do".
+export async function buildReviewList(rows, choiceOf = () => '') {
+  const ExcelJS = (await import('exceljs')).default; // lazy — it is a big library
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('List');
+  ws.columns = [
+    { header: 'Excel Row', key: 'row', width: 10 },
+    { header: 'Emp_No', key: 'emp', width: 14 },
+    { header: 'Attend_Date', key: 'date', width: 13 },
+    { header: 'Shift Schedule', key: 'shift', width: 18 },
+    { header: 'Attend_Time IN', key: 'in', width: 15 },
+    { header: 'Attend_Time OUT', key: 'out', width: 15 },
+    { header: 'Remarks', key: 'remarks', width: 28 },
+    { header: 'What to do', key: 'todo', width: 22 },
+  ];
+  ws.getRow(1).font = { bold: true };
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  rows.forEach((d) => {
+    ws.addRow({
+      row: d.rowNum,
+      emp: d.empNo,
+      date: d.date,
+      shift: d.shift || '',
+      in: d.timeIn || '',
+      out: d.timeOut || '',
+      remarks: d.remarks || '',
+      todo: choiceOf(d) || '',
+    });
+  });
+  // Text format for everything but the row number, so dates/times stay as shown.
+  ws.eachRow((row, n) => { if (n > 1) row.eachCell((c, col) => { if (col > 1) c.numFmt = '@'; }); });
+  return wb.xlsx.writeBuffer();
+}

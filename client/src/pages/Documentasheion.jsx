@@ -227,6 +227,26 @@ export function Documentasheion() {
   const fixCount = countFor(reviewPartial);
   const remarkCount = countFor(reviewRemark);
 
+  // Download the list shown in a dialog as an Excel file.
+  async function downloadList(rows, name) {
+    try {
+      const { buildReviewList, XLSX_MIME } = await import('../utils/documentasheion/index.js');
+      const label = (d) => ACTION_OPTIONS.find((o) => o.value === actionOf(d))?.label?.replace(/^— | —$/g, '') || '';
+      const buf = await buildReviewList(rows, label);
+      const url = URL.createObjectURL(new Blob([buf], { type: XLSX_MIME }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(file?.name || 'attendance').replace(/\.[^.]+$/, '')}_${name}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Could not build the list.');
+    }
+  }
+
   // In / Out cell: editable when Manual edit is picked, preview when Match is picked.
   const timeCell = (d, which) => {
     const fx = fixes[d.rowNum];
@@ -456,6 +476,7 @@ export function Documentasheion() {
               </div>
             </div>
             <div className="modal-f">
+              <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={() => downloadList(review, 'no-punches')}>Download list (.xlsx)</button>
               <button className="btn ghost" onClick={() => finishLeave(false)}>Leave all as is</button>
               <button className="btn" onClick={() => finishLeave(true)}>
                 {!fromResult && (reviewPartial.length > 0 || reviewRemark.length > 0)
@@ -522,6 +543,7 @@ export function Documentasheion() {
               </div>
             </div>
             <div className="modal-f">
+              <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={() => downloadList(reviewPartial, 'one-punch')}>Download list (.xlsx)</button>
               <button className="btn ghost" onClick={() => finishPunch(false)}>Leave all as is</button>
               <button className="btn" onClick={() => finishPunch(true)}>
                 {!fromResult && reviewRemark.length > 0
@@ -587,6 +609,7 @@ export function Documentasheion() {
               </div>
             </div>
             <div className="modal-f">
+              <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={() => downloadList(reviewRemark, 'other-remarks')}>Download list (.xlsx)</button>
               <button className="btn ghost" onClick={() => finishRemark(false)}>Leave all as is</button>
               <button className="btn" onClick={() => finishRemark(true)}>
                 {remarkCount ? `Apply ${remarkCount} & generate` : 'Generate'}
