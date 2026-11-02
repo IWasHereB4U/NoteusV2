@@ -42,7 +42,6 @@ export function Documentasheion() {
   const [choices, setChoices] = useState({}); // sourceRow -> leave type picked in the dialog
   const [reviewPartial, setReviewPartial] = useState([]); // days with only a time in or only a time out
   const [fixes, setFixes] = useState({}); // sourceRow -> { mode: ''|'match'|'manual', timeIn, timeOut }
-  const [copiedRow, setCopiedRow] = useState(null); // row number whose Excel reference was just copied
   const [reviewRemark, setReviewRemark] = useState([]); // days whose remark is not a leave code
   const [stage, setStage] = useState(null); // which dialog is open: 'leave' | 'punch' | 'remark' | null
   const [fromResult, setFromResult] = useState(false); // dialog reopened from the results card
@@ -227,41 +226,6 @@ export function Documentasheion() {
   const pickedCount = countFor(review);
   const fixCount = countFor(reviewPartial);
   const remarkCount = countFor(reviewRemark);
-
-  // Copies the row's range (e.g. A10:H10). Paste it into Excel's Name Box (left of the
-  // formula bar) or Ctrl+G and press Enter — it jumps straight to that row and selects it.
-  async function copyRowRef(d) {
-    const ref = `A${d.rowNum}:H${d.rowNum}`;
-    try {
-      await navigator.clipboard.writeText(ref);
-    } catch {
-      const ta = document.createElement('textarea'); // fallback for non-secure contexts
-      ta.value = ref;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
-      document.body.removeChild(ta);
-    }
-    setCopiedRow(d.rowNum);
-    setTimeout(() => setCopiedRow((r) => (r === d.rowNum ? null : r)), 1500);
-  }
-
-  const rowCell = (d) => (
-    <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</span>{' '}
-      <button
-        type="button"
-        className="btn ghost sm"
-        style={{ padding: '1px 8px', fontSize: 11 }}
-        title={`Copy A${d.rowNum}:H${d.rowNum} — paste it in Excel's Name Box (or Ctrl+G) and press Enter to jump to this row`}
-        onClick={() => copyRowRef(d)}
-      >
-        {copiedRow === d.rowNum ? 'Copied ✓' : 'Copy'}
-      </button>
-    </td>
-  );
 
   // In / Out cell: editable when Manual edit is picked, preview when Match is picked.
   const timeCell = (d, which) => {
@@ -472,7 +436,7 @@ export function Documentasheion() {
                   <tbody>
                     {review.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
-                        {rowCell(d)}
+                        <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
                         <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
@@ -538,7 +502,7 @@ export function Documentasheion() {
                   <tbody>
                     {reviewPartial.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
-                        {rowCell(d)}
+                        <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
                         <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
@@ -604,7 +568,7 @@ export function Documentasheion() {
                   <tbody>
                     {reviewRemark.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
-                        {rowCell(d)}
+                        <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
                         <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
