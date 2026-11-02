@@ -85,15 +85,55 @@ export const fmtDateTime = (ms, min) => `${fmtDate(ms)} ${fmtTime(min)}`;
 
 // ---- leave handling ----------------------------------------------------
 
-// A leave label sitting where a shift code should be. VL / SL / Half VL /
-// Half SL take the employee's shift schedule instead.
-const LEAVE_LABEL = /^(half[\s_-]*)?(vl|sl)$/i;
+// Leave types. Remarks (column I) or the review dialog set one per day.
+//   VL / SL    -> full day: time in/out become the shift's own start/end
+//   HVL / HSL  -> half day: the half that was NOT worked is filled from the shift
+//   LWOP       -> left exactly as it is
+// "HSV" is accepted as a spelling of HSL.
+export const LEAVE_TYPES = ['VL', 'SL', 'HVL', 'HSL', 'LWOP'];
+
+const REMARK_ALIASES = {
+  VL: 'VL', SL: 'SL', HVL: 'HVL', HSL: 'HSL', HSV: 'HSL', LWOP: 'LWOP',
+  HALFVL: 'HVL', HALFSL: 'HSL', HALFSV: 'HSL', HALFDAYVL: 'HVL', HALFDAYSL: 'HSL',
+};
+
+// "Half VL", "half-sl", "H.S.L" ... -> 'HVL' | 'HSL' | 'VL' | 'SL' | 'LWOP' | ''
+export function parseLeave(v) {
+  const key = String(v ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+  return REMARK_ALIASES[key] || '';
+}
+
+// Half-day leave splits the shift at 12:00 noon. For a shift that does not
+// contain noon (e.g. a night shift) the split falls back to the middle of the
+// worked hours, taking BREAK_MIN out of the shift length.
+const NOON = 12 * 60;
+const BREAK_MIN = 60;
+// How close to the half-way point a punch can be and still count as
+// "the person came in for the second half" / "left after the first half".
+const HALF_GRACE = 60;
+
+// Shift start/end from the shift code itself (AM_0800_1700, PM_2200_0700_CM ...)
+function timesFromCode(code) {
+  const m = String(code).match(/(\d{2})(\d{2})_(\d{2})(\d{2})/);
+  if (!m) return null;
+  const s = +m[1] * 60 + +m[2];
+  const e = +m[3] * 60 + +m[4];
+  if (+m[1] > 23 || +m[3] > 23 || +m[2] > 59 || +m[4] > 59) return null;
+  return { start: s, end: e };
+}
+
+// signed distance of clock time t from the shift start, -720..+719 minutes
+const offset = (t, start) => ((t - start + 720 + 1440) % 1440) - 720;
 
 // ---- main --------------------------------------------------------------
 
 // rows: array of 9-element arrays (columns A..I), starting at sheet row 2.
-// knownShifts: optional Set of upper-cased shift names/codes (Master Shift Daily).
-export function buildDatasets(rows, { knownShifts } = {}) {
+// options:
+//   knownShifts : Set of upper-cased shift names/codes (Master Shift Daily)
+//   shiftTimes  : Map of upper-cased shift name/code -> { start, end } minutes
+//   overrides   : { [sourceRowNumber]: 'VL'|'SL'|'HVL'|'HSL'|'LWOP' } picked in the leave dialog
+//   punchFixes  : { [sourceRowNumber]: { mode: 'match' | 'manual', timeIn, timeOut } } from the missing-punch dialog
+export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, punchFixes = {} } = {}) {
   const warnings = [];
   const warn = (row, message) => warnings.push({ row, message });
 
@@ -103,10 +143,11 @@ export function buildDatasets(rows, { knownShifts } = {}) {
 
   const employees = new Map(); // empNo -> { empNo, name, byDate: Map(ms -> {shift, remarks}) }
   const allDates = new Set();
+  const records = [];
   let blocks = 0;
   let sampleRows = 0;
-  let dayRows = 0;
 
+  // ---- pass 1: walk the blocks and collect day records -------------------
   let block = null;
   let sawHeader = false;
 
@@ -152,19 +193,47 @@ export function buildDatasets(rows, { knownShifts } = {}) {
       warn(rowNum, `${empNo}: Attend_Date is missing or unreadable — row skipped.`);
       return;
     }
-
-    dayRows += 1;
     allDates.add(dateMs);
-    const dateStr = fmtDate(dateMs);
 
-    // ---- shift schedule bookkeeping
     if (!employees.has(empNo)) employees.set(empNo, { empNo, name: block.name, byDate: new Map() });
     const emp = employees.get(empNo);
     if (!emp.name && block.name) emp.name = block.name;
-    if (emp.byDate.has(dateMs)) warn(rowNum, `${empNo}: ${dateStr} appears more than once — the later row wins in the shift schedule.`);
-    emp.byDate.set(dateMs, { shift: text(r[COL.shift]), remarks: text(r[COL.remarks]), rowNum });
+    if (emp.byDate.has(dateMs)) warn(rowNum, `${empNo}: ${fmtDate(dateMs)} appears more than once — the later row wins in the shift schedule.`);
+    const shift = text(r[COL.shift]);
+    emp.byDate.set(dateMs, { shift, rowNum });
 
-    // ---- times
+    records.push({ rowNum, r, empNo, name: block.name, dateMs, shift, remarks: text(r[COL.remarks]) });
+  });
+
+  // ---- usual shift per employee (for days where the shift column holds a leave label)
+  const usualShift = new Map();
+  for (const emp of employees.values()) {
+    const tally = new Map();
+    for (const { shift } of emp.byDate.values()) {
+      const key = shift.toUpperCase();
+      if (!shift || key === 'OFF' || key === 'LWOP' || parseLeave(shift)) continue;
+      tally.set(shift, (tally.get(shift) || 0) + 1);
+    }
+    usualShift.set(emp.empNo, [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '');
+  }
+
+  const timesOf = (code) => {
+    if (!code) return null;
+    return shiftTimes?.get(code.toUpperCase()) || timesFromCode(code);
+  };
+
+  // ---- pass 2: classify each day -----------------------------------------
+  const review = []; // working days with no punches at all and no leave remark
+  const reviewPartial = []; // working days with only a time in or only a time out and no leave remark
+  let punchFixed = 0;
+  const leaveCount = { VL: 0, SL: 0, HVL: 0, HSL: 0, LWOP: 0 };
+  let dayRows = 0;
+
+  for (const rec of records) {
+    const { rowNum, r, empNo, dateMs } = rec;
+    const dateStr = fmtDate(dateMs);
+    dayRows += 1;
+
     const read = (col, label) => {
       const t = parseTime(r[col]);
       if (Number.isNaN(t)) {
@@ -173,10 +242,93 @@ export function buildDatasets(rows, { knownShifts } = {}) {
       }
       return t;
     };
-    const inM = read(COL.in, 'Attend_Time IN');
-    const outM = read(COL.out, 'Attend_Time OUT');
+    let inM = read(COL.in, 'Attend_Time IN');
+    let outM = read(COL.out, 'Attend_Time OUT');
     const otS = read(COL.otStart, 'Approved Overtime Start time');
     const otE = read(COL.otEnd, 'Approved Overtime End time');
+
+    // The shift to use: the shift column, or the usual one if that column holds a leave label.
+    const labelInShiftCol = parseLeave(rec.shift);
+    const shiftCode = labelInShiftCol ? usualShift.get(empNo) : rec.shift;
+
+    // Leave type: Remarks first, then a label typed in the shift column, then the review dialog.
+    const remarkLeave = parseLeave(rec.remarks);
+    const leave = remarkLeave || labelInShiftCol || overrides[rowNum] || '';
+
+    if (leave) leaveCount[leave] += 1;
+
+    if (leave === 'VL' || leave === 'SL' || leave === 'HVL' || leave === 'HSL') {
+      const st = timesOf(shiftCode);
+      if (!st) {
+        warn(rowNum, `${empNo} ${dateStr}: ${leave} but no start/end could be found for shift "${shiftCode || rec.shift}" — times left as they are.`);
+      } else if (leave === 'VL' || leave === 'SL') {
+        // Full day: the shift's own times.
+        inM = st.start;
+        outM = st.end;
+      } else {
+        // Half day: fill the half that was not worked.
+        const dur = ((st.end - st.start + 1440) % 1440) || 1440;
+        const containsNoon = st.start < st.end && st.start < NOON && NOON < st.end;
+        const half = containsNoon ? NOON - st.start : Math.round((dur - BREAK_MIN) / 2); // minutes after shift start
+        const inOff = inM === null ? null : offset(inM, st.start);
+        const outOff = outM === null ? null : offset(outM, st.start);
+        if (inM === null && outM === null) {
+          inM = st.start; // nothing punched: the first half only
+          outM = (st.start + half) % 1440;
+        } else {
+          // Came in for the second half -> start at the shift start.
+          if (inOff !== null && inOff >= half - HALF_GRACE) inM = st.start;
+          // Left after the first half -> end at the shift end.
+          if (outOff !== null && outOff > 0 && outOff <= half + HALF_GRACE) outM = st.end;
+          // Only one punch: complete the day from the shift for the half that was taken as leave.
+          if (outM === null && inOff !== null && inOff < half - HALF_GRACE) outM = st.end; // worked the first half
+          if (inM === null && outOff !== null && outOff > half + HALF_GRACE) inM = st.start; // worked the second half
+        }
+      }
+    }
+
+    // Working days with a missing punch and nothing to explain it -> ask the user.
+    const shiftKey = (rec.shift || '').toUpperCase();
+    const isWorkDay = rec.shift && shiftKey !== 'OFF' && shiftKey !== 'LWOP' && !labelInShiftCol;
+    if (!leave && isWorkDay && (inM === null || outM === null)) {
+      const base = {
+        rowNum, empNo, name: rec.name, date: dateStr, shift: rec.shift,
+        timeIn: inM === null ? '' : fmtTime(inM), timeOut: outM === null ? '' : fmtTime(outM),
+        remarks: rec.remarks,
+      };
+      if (inM === null && outM === null) {
+        review.push(base);
+      } else {
+        const st = timesOf(shiftCode);
+        reviewPartial.push({
+          ...base,
+          // What "match the shift" would put in the blank time.
+          matchIn: st ? fmtTime(st.start) : '',
+          matchOut: st ? fmtTime(st.end) : '',
+          canMatch: !!st,
+        });
+      }
+
+      // Apply the choice made in the missing-punch dialog.
+      const fix = punchFixes[rowNum];
+      if (fix && fix.mode === 'match') {
+        const st = timesOf(shiftCode);
+        if (st) {
+          if (inM === null) inM = st.start;
+          if (outM === null) outM = st.end;
+          punchFixed += 1;
+        } else warn(rowNum, `${empNo} ${dateStr}: no start/end could be found for shift "${shiftCode}" — missing time left blank.`);
+      } else if (fix && fix.mode === 'manual') {
+        const mi = fix.timeIn ? parseTime(fix.timeIn) : null;
+        const mo = fix.timeOut ? parseTime(fix.timeOut) : null;
+        if (Number.isNaN(mi) || Number.isNaN(mo)) warn(rowNum, `${empNo} ${dateStr}: the manual time is not readable — left as it was.`);
+        else {
+          if (mi !== null) inM = mi;
+          if (mo !== null) outM = mo;
+          punchFixed += 1;
+        }
+      }
+    }
 
     const hasIn = inM !== null;
     const hasOut = outM !== null;
@@ -213,29 +365,20 @@ export function buildDatasets(rows, { knownShifts } = {}) {
         warn(rowNum, `${empNo} ${dateStr}: overtime runs past midnight but the shift does not — not placed in either attendance file, please check.`);
       }
     }
-  });
+  }
 
   // ---- shift schedule ---------------------------------------------------
+  // The shift column as it is (OFF, LWOP too); VL/SL/Half leave keep the scheduled shift.
   const dates = [...allDates].sort((a, b) => a - b);
 
   const schedule = [...employees.values()].map((emp) => {
-    // Most common real shift for this employee, used only when a leave label
-    // (VL / SL / Half VL / Half SL) has been typed in the shift column.
-    const tally = new Map();
-    for (const { shift } of emp.byDate.values()) {
-      const key = shift.toUpperCase();
-      if (!shift || key === 'OFF' || key === 'LWOP' || LEAVE_LABEL.test(shift)) continue;
-      tally.set(shift, (tally.get(shift) || 0) + 1);
-    }
-    const usual = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-
     const cells = {};
     for (const [ms, { shift, rowNum }] of emp.byDate) {
-      if (LEAVE_LABEL.test(shift)) {
+      if (parseLeave(shift) && parseLeave(shift) !== 'LWOP') {
+        const usual = usualShift.get(emp.empNo);
         cells[ms] = usual;
         warn(rowNum, `${emp.empNo} ${fmtDate(ms)}: shift column says "${shift}" instead of a shift code — used ${usual ? `the usual shift ${usual}` : 'nothing (no usual shift found)'}.`);
       } else {
-        // Real shift codes, OFF and LWOP are written exactly as they are.
         cells[ms] = shift;
       }
     }
@@ -260,6 +403,8 @@ export function buildDatasets(rows, { knownShifts } = {}) {
     perDay,
     overtime,
     schedule: { dates: dates.map((ms) => ({ ms, label: fmtDate(ms) })), employees: schedule },
+    review,
+    reviewPartial,
     warnings,
     stats: {
       employees: employees.size,
@@ -271,6 +416,8 @@ export function buildDatasets(rows, { knownShifts } = {}) {
       overtime: overtime.length,
       scheduleRows: schedule.length,
       scheduleDates: dates.length,
+      leave: leaveCount,
+      punchFixed,
     },
   };
 }

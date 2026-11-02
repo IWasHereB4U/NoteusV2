@@ -152,23 +152,30 @@ async function writeSchedule(ExcelJS, tpl, data) {
 
 const WRITERS = { onDay: writeOnDay, perDay: writePerDay, overtime: writeOvertime, schedule: writeSchedule };
 
-// Shift names and codes from the Master Shift Daily sheet of the shift template.
-async function readKnownShifts(ExcelJS, tpl) {
+// Shift names/codes and their start/end times from the Master Shift Daily sheet.
+async function readMasterShifts(ExcelJS, tpl) {
   const wb = await loadWorkbook(ExcelJS, tpl);
   const ws = wb.getWorksheet('Master Shift Daily');
   const known = new Set();
-  if (!ws) return known;
+  const times = new Map();
+  if (!ws) return { known, times };
   for (let r = 4; r <= ws.rowCount; r += 1) {
-    for (const c of [2, 3]) {
-      const v = plain(ws.getRow(r).getCell(c).value);
-      if (v != null && String(v).trim()) known.add(String(v).trim().toUpperCase());
+    const row = ws.getRow(r);
+    const name = String(plain(row.getCell(2).value) ?? '').trim();
+    const code = String(plain(row.getCell(3).value) ?? '').trim();
+    const range = String(plain(row.getCell(5).value) ?? '').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    for (const k of [name, code]) {
+      if (!k) continue;
+      known.add(k.toUpperCase());
+      if (range) times.set(k.toUpperCase(), { start: +range[1] * 60 + +range[2], end: +range[3] * 60 + +range[4] });
     }
   }
-  return known;
+  return { known, times };
 }
 
-// Browser entry point: file = the filled-in Attendance Data Template.
-export async function generateFromFile(file, { onStatus } = {}) {
+// Step 1 (browser): load everything and read the sheet. Returns a "prepared"
+// object plus the days that need a leave decision (`review`).
+export async function prepareFromFile(file, { onStatus } = {}) {
   const ExcelJS = (await import('exceljs')).default; // lazy — it is a big library
   const base = import.meta.env?.BASE_URL || '/';
 
@@ -181,14 +188,23 @@ export async function generateFromFile(file, { onStatus } = {}) {
   }
 
   onStatus?.('Reading attendance data…');
-  return generate(ExcelJS, await file.arrayBuffer(), templates, onStatus);
+  return prepare(ExcelJS, await file.arrayBuffer(), templates);
 }
 
-// Shared by the browser and by tests: everything is passed in as buffers.
-export async function generate(ExcelJS, attendanceData, templates, onStatus) {
+export async function prepare(ExcelJS, attendanceData, templates) {
   const rows = await readAttendanceRows(ExcelJS, attendanceData);
-  const knownShifts = await readKnownShifts(ExcelJS, templates.schedule);
-  const data = buildDatasets(rows, { knownShifts });
+  const { known, times } = await readMasterShifts(ExcelJS, templates.schedule);
+  const opts = { knownShifts: known, shiftTimes: times };
+  const first = buildDatasets(rows, opts); // no overrides yet — just to find what needs asking
+  return { ExcelJS, rows, templates, opts, review: first.review, reviewPartial: first.reviewPartial };
+}
+
+// Step 2: apply the leave choices made in the dialog and write the four files.
+// overrides  = { [sourceRowNumber]: 'VL' | 'SL' | 'HVL' | 'HSL' | 'LWOP' }
+// punchFixes = { [sourceRowNumber]: { mode: 'match' | 'manual', timeIn, timeOut } }
+export async function finish(prepared, overrides = {}, onStatus, punchFixes = {}) {
+  const { ExcelJS, rows, templates, opts } = prepared;
+  const data = buildDatasets(rows, { ...opts, overrides, punchFixes });
 
   const files = [];
   for (const o of OUTPUTS) {
@@ -202,5 +218,11 @@ export async function generate(ExcelJS, attendanceData, templates, onStatus) {
       buffer: buf,
     });
   }
-  return { files, stats: data.stats, warnings: data.warnings };
+  return { files, stats: data.stats, warnings: data.warnings, review: data.review };
+}
+
+// Convenience for tests / scripts: both steps in one go.
+export async function generate(ExcelJS, attendanceData, templates, onStatus, overrides = {}, punchFixes = {}) {
+  const prepared = await prepare(ExcelJS, attendanceData, templates);
+  return finish(prepared, overrides, onStatus, punchFixes);
 }
