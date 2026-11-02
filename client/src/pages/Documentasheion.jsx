@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Documentasheion: one filled-in Attendance Data Template in, the four HR
-// import files out (Attendance On Day, Attendance Per Day, Overtime Request,
+// import files out (Attendance On Day, Attendance Next Day, Overtime Request,
 // Shift Schedule). Everything runs in the browser — nothing is uploaded.
 
 const MAX_WARNINGS_SHOWN = 200;
@@ -353,6 +353,7 @@ export function Documentasheion() {
             {result.stats.employees} employee{result.stats.employees === 1 ? '' : 's'} · {result.stats.dayRows} day rows read
             {result.stats.sampleRows ? ` · ${result.stats.sampleRows} sample row${result.stats.sampleRows === 1 ? '' : 's'} skipped` : ''}
             {result.stats.punchFixed ? ` · ${result.stats.punchFixed} missing punch${result.stats.punchFixed === 1 ? '' : 'es'} fixed` : ''}
+            {result.stats.onePunchSkipped ? ` · ${result.stats.onePunchSkipped} one-punch day${result.stats.onePunchSkipped === 1 ? '' : 's'} left out` : ''}
             {result.stats.offDayOt ? ` · ${result.stats.offDayOt} OFF-day attendance → overtime` : ''}
             {(() => {
               const l = Object.entries(result.stats.leave || {}).filter(([, n]) => n > 0);
@@ -412,8 +413,9 @@ export function Documentasheion() {
           </p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li><b>Remarks</b> — VL / SL: time in/out become the shift's own start/end. HVL / HSL (or HSV): the half not worked is filled from the shift; with no punches at all, only the first half (shift start to 12:00) is filled. LWOP: left as is.</li>
+            <li><b>One punch only</b> — a day with only a time in or only a time out (after the dialog) is incomplete, so it is left out of every attendance and overtime file. Fix it in the dialog (leave type, match the shift, manual edit) to include it.</li>
             <li><b>Attendance On Day</b> — days with a time in/out that stay on the same date, and whose overtime (if any) does too.</li>
-            <li><b>Attendance Per Day</b> — shifts whose time out falls on the next date (out earlier than in); overtime is not considered.</li>
+            <li><b>Attendance Next Day</b> — shifts whose time out falls on the next date (out earlier than in); overtime is not considered.</li>
             <li><b>Overtime Request</b> — days that have an approved overtime start and end, plus any day whose shift is OFF but has attendance (time in/out become the overtime start/end); dates roll over midnight where needed. Reason code is left blank.</li>
             <li><b>Shift Schedule</b> — one row per employee, one column per date, using the Shift Schedule column as it is (OFF and LWOP included). Leave days keep the scheduled shift.</li>
           </ul>

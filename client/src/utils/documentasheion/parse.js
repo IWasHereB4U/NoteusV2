@@ -226,6 +226,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
   const reviewPartial = []; // working days with only a time in or only a time out and no leave remark
   const reviewRemark = []; // days with a remark that is not a leave code (e.g. "test") and nothing else needing a decision
   let punchFixed = 0;
+  let onePunchSkipped = 0; // days with only one punch, left out of every file
   let offDayOt = 0; // OFF days that have attendance -> overtime
   const leaveCount = { VL: 0, SL: 0, HVL: 0, HSL: 0, LWOP: 0 };
   let dayRows = 0;
@@ -335,6 +336,14 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     // The shift runs past midnight when the out time is earlier than the in time.
     const shiftCrosses = hasIn && hasOut && outM < inM;
 
+    // Only one punch (and not fixed in the dialog) = incomplete: it goes into none of
+    // the attendance / overtime files. (The shift schedule is not affected.)
+    if (hasIn !== hasOut) {
+      onePunchSkipped += 1;
+      warn(rowNum, `${empNo} ${dateStr}: only Time ${hasIn ? 'IN' : 'OUT'} (${fmtTime(hasIn ? inM : outM)}) was recorded — incomplete, left out of the attendance and overtime files.`);
+      continue;
+    }
+
     // ---- overtime
     let otCrosses = false;
     if ((otS === null) !== (otE === null)) {
@@ -354,27 +363,20 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     // ---- OFF day with attendance -> counts as overtime
     // The person was not scheduled but punched, so the worked time is OT.
     // Approved OT times in the sheet win; otherwise the punches are the OT window.
-    if (isOffDay && !leave && otS === null && otE === null && (hasIn || hasOut)) {
-      if (hasIn && hasOut) {
-        const endDay = outM < inM ? 1 : 0;
-        overtime.push([empNo, dateStr, '', dateStr, fmtTime(inM), fmtDate(dateMs + endDay * DAY), fmtTime(outM)]);
-        offDayOt += 1;
-        warn(rowNum, `${empNo} ${dateStr}: shift is OFF but there is attendance (${fmtTime(inM)}–${fmtTime(outM)}) — added to Overtime Request.`);
-      } else {
-        warn(rowNum, `${empNo} ${dateStr}: shift is OFF and only Time ${hasIn ? 'IN' : 'OUT'} was recorded — cannot make an overtime row, please check.`);
-      }
+    if (isOffDay && !leave && otS === null && otE === null && (hasIn && hasOut)) {
+      const endDay = outM < inM ? 1 : 0;
+      overtime.push([empNo, dateStr, '', dateStr, fmtTime(inM), fmtDate(dateMs + endDay * DAY), fmtTime(outM)]);
+      offDayOt += 1;
+      warn(rowNum, `${empNo} ${dateStr}: shift is OFF but there is attendance (${fmtTime(inM)}–${fmtTime(outM)}) — added to Overtime Request.`);
     }
 
     // ---- attendance
     if (hasIn || hasOut) {
       if (shiftCrosses) {
-        // Start date and end date of the shift differ -> Per Day file.
+        // Start date and end date of the shift differ -> Next Day file.
         perDay.push([empNo, dateStr, fmtDateTime(dateMs, inM), fmtDateTime(dateMs + DAY, outM)]);
       } else if (!otCrosses) {
-        onDay.push([empNo, dateStr, hasIn ? fmtTime(inM) : '', hasOut ? fmtTime(outM) : '']);
-        if (!hasIn || !hasOut) {
-          warn(rowNum, `${empNo} ${dateStr}: only Time ${hasIn ? 'IN' : 'OUT'} was recorded — added to Attendance On Day with the other time blank.`);
-        }
+        onDay.push([empNo, dateStr, fmtTime(inM), fmtTime(outM)]);
       } else {
         warn(rowNum, `${empNo} ${dateStr}: overtime runs past midnight but the shift does not — not placed in either attendance file, please check.`);
       }
@@ -434,6 +436,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       leave: leaveCount,
       punchFixed,
       offDayOt,
+      onePunchSkipped,
     },
   };
 }

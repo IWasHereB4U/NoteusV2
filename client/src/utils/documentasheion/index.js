@@ -5,7 +5,7 @@ import { buildDatasets } from './parse.js';
 // it up — nothing else to edit.
 export const OUTPUTS = [
   { id: 'onDay', label: 'Attendance On Day', file: 'AttendanceOnDay.xlsx', template: 'AttendanceOnDay.xlsx' },
-  { id: 'perDay', label: 'Attendance Per Day', file: 'AttendancePerDay.xlsx', template: 'AttendancePerDay.xlsx' },
+  { id: 'perDay', label: 'Attendance Next Day', file: 'AttendanceNextDay.xlsx', template: 'AttendancePerDay.xlsx' },
   { id: 'overtime', label: 'Overtime Request', file: 'Template_Overtime_Request.xlsx', template: 'Template_Overtime_Request.xlsx' },
   { id: 'schedule', label: 'Shift Schedule', file: 'ShiftScheduleTemplate.xlsx', template: 'ShiftScheduleTemplate.xlsx' },
 ];
