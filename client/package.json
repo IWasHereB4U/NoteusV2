@@ -22,6 +22,8 @@
     "@tiptap/react": "^2.6.6",
     "@tiptap/starter-kit": "^2.6.6",
     "docx": "^9.8.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
     "leaflet": "^1.9.4",
     "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",

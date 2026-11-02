@@ -26,6 +26,8 @@ export const NAV_ITEMS = [
   { to: '/poi', label: 'Point of Interest', icon: '⚑', key: 'poi', group: 'places' },
   // Personal utility, not book data — no `key`, so it isn't gated by circle sharing.
   { to: '/converter', label: 'File converter', icon: '⇄', group: 'tools' },
+  // Excel in, four HR import files out. Same deal: personal utility, no `key`.
+  { to: '/documentasheion', label: 'Documentasheion', icon: '▤', group: 'tools' },
 ];
 
 // Display order of the collapsible categories in the nav rail. `short` is the

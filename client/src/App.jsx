@@ -22,6 +22,7 @@ import { NoteTags } from './pages/NoteTags.jsx';
 import { Destination } from './pages/Destination.jsx';
 import { Poi } from './pages/Poi.jsx';
 import { Converter } from './pages/Converter.jsx';
+import { Documentasheion } from './pages/Documentasheion.jsx';
 
 export default function App() {
   return (
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="/maps" element={<Navigate to="/destination" replace />} />
             <Route path="/poi" element={<Poi />} />
             <Route path="/converter" element={<Converter />} />
+            <Route path="/documentasheion" element={<Documentasheion />} />
           </Route>
         </Routes>
         </YardProvider>
