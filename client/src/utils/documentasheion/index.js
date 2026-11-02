@@ -196,7 +196,7 @@ export async function prepare(ExcelJS, attendanceData, templates) {
   const { known, times } = await readMasterShifts(ExcelJS, templates.schedule);
   const opts = { knownShifts: known, shiftTimes: times };
   const first = buildDatasets(rows, opts); // no overrides yet — just to find what needs asking
-  return { ExcelJS, rows, templates, opts, review: first.review, reviewPartial: first.reviewPartial };
+  return { ExcelJS, rows, templates, opts, review: first.review, reviewPartial: first.reviewPartial, reviewRemark: first.reviewRemark };
 }
 
 // Step 2: apply the leave choices made in the dialog and write the four files.

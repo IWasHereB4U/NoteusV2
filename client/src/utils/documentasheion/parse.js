@@ -225,7 +225,9 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
   // ---- pass 2: classify each day -----------------------------------------
   const review = []; // working days with no punches at all and no leave remark
   const reviewPartial = []; // working days with only a time in or only a time out and no leave remark
+  const reviewRemark = []; // days with a remark that is not a leave code (e.g. "test") and nothing else needing a decision
   let punchFixed = 0;
+  let offDayOt = 0; // OFF days that have attendance -> overtime
   const leaveCount = { VL: 0, SL: 0, HVL: 0, HSL: 0, LWOP: 0 };
   let dayRows = 0;
 
@@ -290,29 +292,27 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     // Working days with a missing punch and nothing to explain it -> ask the user.
     const shiftKey = (rec.shift || '').toUpperCase();
     const isWorkDay = rec.shift && shiftKey !== 'OFF' && shiftKey !== 'LWOP' && !labelInShiftCol;
-    if (!leave && isWorkDay && (inM === null || outM === null)) {
+    const missingPunch = isWorkDay && (inM === null || outM === null);
+    // A remark that is not VL/SL/HVL/HSL/LWOP: could be any of them or need a manual edit -> ask.
+    const unknownRemark = !leave && !missingPunch && !!rec.remarks;
+    if (!leave && (missingPunch || unknownRemark)) {
+      const st = timesOf(shiftCode);
       const base = {
         rowNum, empNo, name: rec.name, date: dateStr, shift: rec.shift,
         timeIn: inM === null ? '' : fmtTime(inM), timeOut: outM === null ? '' : fmtTime(outM),
         remarks: rec.remarks,
+        // What "match the shift" would put in the blank time(s).
+        matchIn: st ? fmtTime(st.start) : '',
+        matchOut: st ? fmtTime(st.end) : '',
+        canMatch: !!st,
       };
-      if (inM === null && outM === null) {
-        review.push(base);
-      } else {
-        const st = timesOf(shiftCode);
-        reviewPartial.push({
-          ...base,
-          // What "match the shift" would put in the blank time.
-          matchIn: st ? fmtTime(st.start) : '',
-          matchOut: st ? fmtTime(st.end) : '',
-          canMatch: !!st,
-        });
-      }
+      if (unknownRemark) reviewRemark.push(base);
+      else if (inM === null && outM === null) review.push(base);
+      else reviewPartial.push(base);
 
-      // Apply the choice made in the missing-punch dialog.
+      // Apply the choice made in the dialog.
       const fix = punchFixes[rowNum];
       if (fix && fix.mode === 'match') {
-        const st = timesOf(shiftCode);
         if (st) {
           if (inM === null) inM = st.start;
           if (outM === null) outM = st.end;
@@ -330,6 +330,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       }
     }
 
+    const isOffDay = shiftKey === 'OFF';
     const hasIn = inM !== null;
     const hasOut = outM !== null;
     // The shift runs past midnight when the out time is earlier than the in time.
@@ -349,6 +350,20 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       if (eDay * 1440 + otE < sDay * 1440 + otS) eDay += 1;
       otCrosses = sDay > 0 || eDay > 0;
       overtime.push([empNo, dateStr, '', fmtDate(dateMs + sDay * DAY), fmtTime(otS), fmtDate(dateMs + eDay * DAY), fmtTime(otE)]);
+    }
+
+    // ---- OFF day with attendance -> counts as overtime
+    // The person was not scheduled but punched, so the worked time is OT.
+    // Approved OT times in the sheet win; otherwise the punches are the OT window.
+    if (isOffDay && !leave && otS === null && otE === null && (hasIn || hasOut)) {
+      if (hasIn && hasOut) {
+        const endDay = outM < inM ? 1 : 0;
+        overtime.push([empNo, dateStr, '', dateStr, fmtTime(inM), fmtDate(dateMs + endDay * DAY), fmtTime(outM)]);
+        offDayOt += 1;
+        warn(rowNum, `${empNo} ${dateStr}: shift is OFF but there is attendance (${fmtTime(inM)}–${fmtTime(outM)}) — added to Overtime Request.`);
+      } else {
+        warn(rowNum, `${empNo} ${dateStr}: shift is OFF and only Time ${hasIn ? 'IN' : 'OUT'} was recorded — cannot make an overtime row, please check.`);
+      }
     }
 
     // ---- attendance
@@ -405,6 +420,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     schedule: { dates: dates.map((ms) => ({ ms, label: fmtDate(ms) })), employees: schedule },
     review,
     reviewPartial,
+    reviewRemark,
     warnings,
     stats: {
       employees: employees.size,
@@ -418,6 +434,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       scheduleDates: dates.length,
       leave: leaveCount,
       punchFixed,
+      offDayOt,
     },
   };
 }
