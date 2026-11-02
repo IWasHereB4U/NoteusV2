@@ -33,22 +33,25 @@ async function loadWorkbook(ExcelJS, data) {
   return wb;
 }
 
-// Rows 2..n of the first sheet as 9-element arrays (columns A..I).
+// Rows 2..n of the first sheet as 8-element arrays (columns A..H).
 async function readAttendanceRows(ExcelJS, data) {
   const wb = await loadWorkbook(ExcelJS, data);
   const ws = wb.worksheets[0];
   if (!ws) throw new Error('The workbook has no sheets.');
 
   const head = (c) => String(plain(ws.getRow(1).getCell(c).value) ?? '');
-  if (!/emp/i.test(head(2)) || !/date/i.test(head(3))) {
-    throw new Error('This does not look like the Attendance Data Template — expected Emp_No in column B and Attend_Date in column C of row 1.');
+  if (/name/i.test(head(1)) && /emp/i.test(head(2))) {
+    throw new Error('This is the old template with the Employee Name column. Delete that column (or use the new Attendance Data Template) so Emp_No is in column A.');
+  }
+  if (!/emp/i.test(head(1)) || !/date/i.test(head(2))) {
+    throw new Error('This does not look like the Attendance Data Template — expected Emp_No in column A and Attend_Date in column B of row 1.');
   }
 
   const rows = [];
   for (let r = 2; r <= ws.rowCount; r += 1) {
     const row = ws.getRow(r);
     const out = [];
-    for (let c = 1; c <= 9; c += 1) out.push(plain(row.getCell(c).value));
+    for (let c = 1; c <= 8; c += 1) out.push(plain(row.getCell(c).value));
     rows.push(out);
   }
   return rows;

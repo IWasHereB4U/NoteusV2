@@ -3,17 +3,19 @@
 // No spreadsheet library in here, so it can be tested on plain arrays.
 //
 // Layout of the source sheet (row 1 is the column header, skipped):
-//   ####  <- header row of an employee: only column A (the name) is filled
-//   rows  <- that employee's timesheet, one row per day
-//   (empty row)  <- end of the employee's timesheet
-//   ####  <- next employee ...
-// Any rows before the first header row are the template's sample rows and
-// are ignored.
+//   rows  <- one employee's timesheet, one row per day (Emp_No on every row)
+//   (empty row)  <- end of that employee's timesheet
+//   rows  <- next employee ...
+// The template's sample block (Emp_No GD_001, first block of the sheet) is
+// ignored.
 
 const DAY = 86400000;
 
 // Zero-based column positions in the Attendance Data Template.
-const COL = { name: 0, emp: 1, date: 2, shift: 3, in: 4, out: 5, otStart: 6, otEnd: 7, remarks: 8 };
+const COL = { emp: 0, date: 1, shift: 2, in: 3, out: 4, otStart: 5, otEnd: 6, remarks: 7 };
+
+// Emp_No used by the template's sample rows.
+const SAMPLE_EMP = 'GD_001';
 
 const pad = (n) => String(n).padStart(2, '0');
 const isBlank = (v) => v == null || (typeof v === 'string' && v.trim() === '');
@@ -141,7 +143,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
   const perDay = [];
   const overtime = [];
 
-  const employees = new Map(); // empNo -> { empNo, name, byDate: Map(ms -> {shift, remarks}) }
+  const employees = new Map(); // empNo -> { empNo, byDate: Map(ms -> {shift, remarks}) }
   const allDates = new Set();
   const records = [];
   let blocks = 0;
@@ -149,7 +151,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
 
   // ---- pass 1: walk the blocks and collect day records -------------------
   let block = null;
-  let sawHeader = false;
+  let sawReal = false;
 
   rows.forEach((r, i) => {
     const rowNum = i + 2;
@@ -160,31 +162,29 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       return;
     }
 
-    const noEmp = isBlank(r[COL.emp]);
-    const noDate = isBlank(r[COL.date]);
-    const restBlank = r.slice(COL.shift).every(isBlank);
-
-    // Header row: only the name is filled.
-    if (noEmp && noDate && restBlank && !isBlank(r[COL.name])) {
-      block = { name: text(r[COL.name]), empNo: '' };
-      sawHeader = true;
-      blocks += 1;
-      return;
-    }
-
-    if (!block) {
-      if (!sawHeader) sampleRows += 1; // template sample rows, before the first header
-      else warn(rowNum, 'Row is not under an employee header (no header row above it after the last empty row) — skipped.');
-      return;
-    }
+    // A new block starts at the first filled row after an empty row.
+    const startsBlock = !block;
+    if (startsBlock) block = { empNo: '', sample: false };
 
     const empNo = text(r[COL.emp]) || block.empNo;
+
+    // The template's sample block (GD_001) at the top of the sheet.
+    if (startsBlock && !sawReal && empNo.toUpperCase() === SAMPLE_EMP) block.sample = true;
+    if (block.sample) {
+      sampleRows += 1;
+      return;
+    }
+    if (startsBlock) {
+      sawReal = true;
+      blocks += 1;
+    }
+
     if (!empNo) {
       warn(rowNum, 'No Emp_No on this row or earlier in this employee\'s block — skipped.');
       return;
     }
     if (block.empNo && empNo !== block.empNo) {
-      warn(rowNum, `Emp_No changes from ${block.empNo} to ${empNo} inside one employee block — is an empty row missing before this row? It was filed under "${block.name}".`);
+      warn(rowNum, `Emp_No changes from ${block.empNo} to ${empNo} inside one employee block — is an empty row missing before this row?`);
     }
     block.empNo = block.empNo || empNo;
 
@@ -195,14 +195,13 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     }
     allDates.add(dateMs);
 
-    if (!employees.has(empNo)) employees.set(empNo, { empNo, name: block.name, byDate: new Map() });
+    if (!employees.has(empNo)) employees.set(empNo, { empNo, byDate: new Map() });
     const emp = employees.get(empNo);
-    if (!emp.name && block.name) emp.name = block.name;
     if (emp.byDate.has(dateMs)) warn(rowNum, `${empNo}: ${fmtDate(dateMs)} appears more than once — the later row wins in the shift schedule.`);
     const shift = text(r[COL.shift]);
     emp.byDate.set(dateMs, { shift, rowNum });
 
-    records.push({ rowNum, r, empNo, name: block.name, dateMs, shift, remarks: text(r[COL.remarks]) });
+    records.push({ rowNum, r, empNo, dateMs, shift, remarks: text(r[COL.remarks]) });
   });
 
   // ---- usual shift per employee (for days where the shift column holds a leave label)
@@ -298,7 +297,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     if (!leave && (missingPunch || unknownRemark)) {
       const st = timesOf(shiftCode);
       const base = {
-        rowNum, empNo, name: rec.name, date: dateStr, shift: rec.shift,
+        rowNum, empNo, date: dateStr, shift: rec.shift,
         timeIn: inM === null ? '' : fmtTime(inM), timeOut: outM === null ? '' : fmtTime(outM),
         remarks: rec.remarks,
         // What "match the shift" would put in the blank time(s).
@@ -397,7 +396,7 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
         cells[ms] = shift;
       }
     }
-    return { empNo: emp.empNo, name: emp.name, cells };
+    return { empNo: emp.empNo, name: '', cells }; // no name column in the source sheet
   });
 
   // Shift codes that aren't in the Master Shift Daily sheet.

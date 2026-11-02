@@ -386,9 +386,9 @@ export function Documentasheion() {
         <div className="card-h"><h2>How the sheet is read</h2></div>
         <div className="card-b" style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.6 }}>
           <p style={{ margin: '0 0 8px' }}>
-            Row 1 is the column header and the sample rows before the first employee are ignored. An employee starts at a
-            header row (just the name filled in), followed by their timesheet; an empty row ends it, and the next header starts
-            the next employee. Empty rows are skipped.
+            Row 1 is the column header and the template's sample rows (Emp_No GD_001) are ignored. Each employee's timesheet
+            is a group of rows with their Emp_No on every row; an empty row ends it and the next group is the next employee.
+            Empty rows are skipped.
           </p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li><b>Remarks</b> — VL / SL: time in/out become the shift's own start/end. HVL / HSL (or HSV): the half not worked is filled from the shift; with no punches at all, only the first half (shift start to 12:00) is filled. LWOP: left as is.</li>
@@ -437,7 +437,7 @@ export function Documentasheion() {
                     {review.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
-                        <td style={{ padding: '6px 8px' }}>{d.empNo}{d.name ? <span style={{ color: 'var(--ink3)' }}> · {d.name}</span> : null}</td>
+                        <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
                         <td style={{ padding: '6px 8px' }}>{timeCell(d, 'in')}</td>
@@ -503,7 +503,7 @@ export function Documentasheion() {
                     {reviewPartial.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
-                        <td style={{ padding: '6px 8px' }}>{d.empNo}{d.name ? <span style={{ color: 'var(--ink3)' }}> · {d.name}</span> : null}</td>
+                        <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
                         <td style={{ padding: '6px 8px' }}>{timeCell(d, 'in')}</td>
@@ -569,7 +569,7 @@ export function Documentasheion() {
                     {reviewRemark.map((d) => (
                       <tr key={d.rowNum} style={{ borderTop: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px 8px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink3)' }}>{d.rowNum}</td>
-                        <td style={{ padding: '6px 8px' }}>{d.empNo}{d.name ? <span style={{ color: 'var(--ink3)' }}> · {d.name}</span> : null}</td>
+                        <td style={{ padding: '6px 8px' }}>{d.empNo}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.date}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{d.shift}</td>
                         <td style={{ padding: '6px 8px' }}>{timeCell(d, 'in')}</td>
