@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 const MODULES = [
   ['clients', 'Clients'],
   ['money', 'Money'],
+  ['bankbook', 'Bankbook'],
   ['projecttimeline', 'Project Timeline'], // MGOctaviano07Oct2026: replaced Invoices
   ['tasks', 'Tasks'],
   ['meetings', 'Meetings'],
