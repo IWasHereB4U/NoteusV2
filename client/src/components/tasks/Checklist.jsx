@@ -18,8 +18,9 @@ function FoldBar({ hasParents, allCollapsed, onCollapseAll, onExpandAll }) {
 
 // Editable nested checklist, used inside the task and instance editors.
 //
-// Keyboard: Enter adds a sibling below, Tab nests the item under the one
-// above it, Shift+Tab moves it back out, Backspace on an empty item
+// Keyboard: Enter adds a sibling below, Tab (or → at the end of the text)
+// nests the item under the one above it, Shift+Tab (or ← at the start)
+// moves it back out, Backspace on an empty item
 // removes it. The buttons do the same for anyone not using the keyboard.
 export function ChecklistEditor({ items, onChange }) {
   const inputs = useRef({});
@@ -34,9 +35,15 @@ export function ChecklistEditor({ items, onChange }) {
     if (up && up.length) unfold(up);
   }
 
+  const caretAt = useRef(null); // where to put the cursor after a re-parent
   useEffect(() => {
-    if (focusId && inputs.current[focusId]) {
-      inputs.current[focusId].focus();
+    const el = focusId && inputs.current[focusId];
+    if (el) {
+      el.focus();
+      if (caretAt.current != null) {
+        try { el.setSelectionRange(caretAt.current, caretAt.current); } catch { /* not a text input */ }
+        caretAt.current = null;
+      }
       setFocusId(null);
     }
   }, [focusId, items]);
@@ -73,6 +80,32 @@ export function ChecklistEditor({ items, onChange }) {
       onChange(next);
       reveal(next, item.id);
       setFocusId(item.id);
+    } else if (
+      (e.key === 'ArrowRight' || e.key === 'ArrowLeft') &&
+      !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.nativeEvent.isComposing
+    ) {
+      // Arrow keys re-parent the item, but only once the cursor has hit the
+      // edge of the text — so you can still move through what you typed.
+      // → at the end nests it under the item above; ← at the start moves it
+      // out one level. A new/empty item is at both edges, so it works at once.
+      const input = e.target;
+      const { selectionStart: a, selectionEnd: b, value } = input;
+      if (a !== b) return;
+      if (e.key === 'ArrowRight' && a === value.length) {
+        e.preventDefault();
+        const next = indentItem(items, item.id);
+        onChange(next);
+        reveal(next, item.id);
+        caretAt.current = a;
+        setFocusId(item.id);
+      } else if (e.key === 'ArrowLeft' && a === 0) {
+        e.preventDefault();
+        const next = outdentItem(items, item.id);
+        onChange(next);
+        reveal(next, item.id);
+        caretAt.current = a;
+        setFocusId(item.id);
+      }
     } else if (e.key === 'Backspace' && !item.text && !(item.children || []).length) {
       e.preventDefault();
       onChange(removeItem(items, item.id));
@@ -154,7 +187,7 @@ export function ChecklistEditor({ items, onChange }) {
       </button>
       {items.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
-          Enter = new item · Tab = nest under the one above · Shift+Tab = move out
+          Enter = new item · Tab or → (at end of text) = nest under the one above · Shift+Tab or ← (at start) = move out
         </div>
       )}
     </div>
