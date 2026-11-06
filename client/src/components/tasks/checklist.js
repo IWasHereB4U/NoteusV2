@@ -138,3 +138,25 @@ export function normalizeLink(link) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return v;
   return `https://${v}`;
 }
+
+// Ids of every item that has sub-items — what "Collapse all" folds.
+export function parentIds(items = []) {
+  const out = [];
+  for (const it of items) {
+    if ((it.children || []).length) {
+      out.push(it.id, ...parentIds(it.children));
+    }
+  }
+  return out;
+}
+
+// Ids of the items above `id` in the tree (its parent, grandparent, …),
+// or null when `id` isn't in the tree. Used to unfold the path to an item.
+export function ancestorIds(items = [], id, trail = []) {
+  for (const it of items) {
+    if (it.id === id) return trail;
+    const found = ancestorIds(it.children || [], id, [...trail, it.id]);
+    if (found) return found;
+  }
+  return null;
+}

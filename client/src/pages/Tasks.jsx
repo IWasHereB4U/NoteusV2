@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
+import { useCollapsed } from '../hooks/useCollapsed.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
 import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
@@ -33,6 +34,8 @@ export function Tasks() {
   const [showInstances, setShowInstances] = useState(false);
   const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
   const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist/macros open
+  // Client groups folded away (remembered between visits).
+  const { collapsed: foldedGroups, toggle: toggleGroup, remove: unfoldGroups } = useCollapsed('tasks-folded-groups');
   // Checklist ticks show instantly; the saved copy replaces this on reload.
   const [checklistOverrides, setChecklistOverrides] = useState({});
 
@@ -101,6 +104,22 @@ export function Tasks() {
     });
   }
 
+  // Tasks that have something to open (a checklist or macros).
+  const expandableIds = useMemo(
+    () => items.filter((t) => (t.checklist || []).length > 0 || (t.macros || []).length > 0).map((t) => t._id),
+    [items]
+  );
+  const allOpen = expandableIds.length > 0 && expandableIds.every((id) => expanded.has(id));
+
+  function expandAll() {
+    setExpanded(new Set(expandableIds));
+    unfoldGroups(groups.map((g) => g.key));
+  }
+
+  function collapseAll() {
+    setExpanded(new Set());
+  }
+
   // --- Task instances -------------------------------------------------
   async function createInstance(values) {
     await api.post('/task-instances', values, viewingId || undefined);
@@ -155,6 +174,16 @@ export function Tasks() {
         <span style={{ fontSize: 12.5, color: 'var(--ink3)', fontWeight: 600 }}>Sort by</span>
         <button className={`btn sm ${sortMode === 'due' ? '' : 'ghost'}`} onClick={() => setSortMode('due')}>Deadline</button>
         <button className={`btn sm ${sortMode === 'priority' ? '' : 'ghost'}`} onClick={() => setSortMode('priority')}>Priority</button>
+        {items.length > 0 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button className="btn ghost sm" onClick={expandAll} disabled={allOpen && foldedGroups.size === 0} title="Open every group and every task's checklist">
+              Expand all
+            </button>
+            <button className="btn ghost sm" onClick={collapseAll} disabled={expanded.size === 0} title="Close every task's checklist and macros">
+              Collapse all
+            </button>
+          </div>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -163,11 +192,21 @@ export function Tasks() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {groups.map((g) => (
             <div key={g.key} className="card">
-              <div className="card-h">
-                <h2>{g.label}</h2>
+              <div
+                className="card-h task-group-head"
+                onClick={() => toggleGroup(g.key)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!foldedGroups.has(g.key)}
+                title={foldedGroups.has(g.key) ? 'Show tasks' : 'Hide tasks'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(g.key); }
+                }}
+              >
+                <h2><span className="task-group-caret">{foldedGroups.has(g.key) ? '▸' : '▾'}</span>{g.label}</h2>
                 <span style={{ fontSize: 11.5, color: 'var(--ink3)' }}>{g.tasks.length}</span>
               </div>
-              <div className="stack">
+              {!foldedGroups.has(g.key) && <div className="stack">
                 {g.tasks.map((t) => {
                   const checklist = checklistOf(t);
                   const { total, done } = countItems(checklist);
@@ -232,6 +271,7 @@ export function Tasks() {
                             <ChecklistView
                               items={checklist}
                               readOnly={!viewingSelf}
+                              storageKey={t._id}
                               onToggle={(itemId) => toggleChecklistItem(t, itemId)}
                             />
                           )}
@@ -241,7 +281,7 @@ export function Tasks() {
                     </div>
                   );
                 })}
-              </div>
+              </div>}
             </div>
           ))}
         </div>
