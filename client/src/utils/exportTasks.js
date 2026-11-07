@@ -18,6 +18,8 @@ function taskLines(t, checklist) {
   const meta = [t.priority, t.due ? `due ${t.due}` : null].filter(Boolean).join(', ');
   const title = (t.title || '').trim() || '(untitled task)';
   const lines = [`[${t.done ? 'x' : ' '}] ${title}${meta ? `  (${meta})` : ''}`];
+  const note = (t.note || '').trim();
+  if (note) lines.push(...note.split(/\r?\n/).map((l) => `${INDENT}${l}`.trimEnd()));
   lines.push(...checklistLines(checklist));
   const macros = (t.macros || []).map((m) => (m.name || '').trim()).filter(Boolean);
   if (macros.length) lines.push(`${INDENT}Macros: ${macros.join(', ')}`);
@@ -53,4 +55,10 @@ export function downloadText(filename, text) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Safe, readable filename fragment from a task title.
+export function slugify(text, fallback = 'task') {
+  const slug = (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  return slug || fallback;
 }

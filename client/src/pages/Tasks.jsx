@@ -9,7 +9,7 @@ import { ChecklistView } from '../components/tasks/Checklist.jsx';
 import { MacroListView } from '../components/tasks/MacroList.jsx';
 import { cloneFresh, countItems, newItemId, toggleItem } from '../components/tasks/checklist.js';
 import { cloneMacros } from '../utils/formMacros.js';
-import { tasksToText, downloadText } from '../utils/exportTasks.js';
+import { tasksToText, downloadText, slugify } from '../utils/exportTasks.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
@@ -124,6 +124,12 @@ export function Tasks() {
   function exportTxt() {
     const text = tasksToText(groups, checklistOf, { sortLabel: sortMode === 'priority' ? 'priority' : 'deadline' });
     downloadText(`tasks-${new Date().toISOString().slice(0, 10)}.txt`, text);
+  }
+
+  // Export just one task (with its checklist and note).
+  function exportOne(t, groupLabel) {
+    const text = tasksToText([{ label: groupLabel, tasks: [t] }], checklistOf);
+    downloadText(`task-${slugify(t.title)}-${new Date().toISOString().slice(0, 10)}.txt`, text);
   }
 
   // --- Task instances -------------------------------------------------
@@ -269,12 +275,17 @@ export function Tasks() {
                         <span className={`tag ${t.priority === 'high' ? 'rose' : t.priority === 'low' ? 'green' : 'ochre'}`}>
                           {t.priority}{t.due ? ` · ${t.due}` : ''}
                         </span>
-                        {viewingSelf && (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn ghost sm" onClick={() => setEditing(t)}>Edit</button>
-                            <button className="btn danger sm" onClick={() => remove(t._id)}>Delete</button>
-                          </div>
-                        )}
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn ghost sm" onClick={() => exportOne(t, g.label)} title="Download just this task as a .txt file">
+                            Export
+                          </button>
+                          {viewingSelf && (
+                            <>
+                              <button className="btn ghost sm" onClick={() => setEditing(t)}>Edit</button>
+                              <button className="btn danger sm" onClick={() => remove(t._id)}>Delete</button>
+                            </>
+                          )}
+                        </div>
                       </div>
                       {isOpen && (total > 0 || macros.length > 0) && (
                         <div style={{ padding: '0 18px 12px 54px' }}>
