@@ -294,7 +294,7 @@ export function Notes() {
       )}
 
       {creatingCardMode === 'choose' && (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setCreatingCardMode(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 420 }}>
             <div className="modal-h"><h3>New card</h3><button onClick={() => setCreatingCardMode(null)}>×</button></div>
             <div className="modal-b" style={{ display: 'flex', gap: 10 }}>
@@ -306,7 +306,7 @@ export function Notes() {
       )}
 
       {movingCard && (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setMovingCard(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 360 }}>
             <div className="modal-h"><h3>Move "{movingCard.title}"</h3><button onClick={() => setMovingCard(null)}>×</button></div>
             <div className="modal-b">
@@ -329,7 +329,7 @@ export function Notes() {
       )}
 
       {managingEditorsFor && (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setManagingEditorsFor(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 420 }}>
             <div className="modal-h">
               <h3>

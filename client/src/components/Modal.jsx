@@ -81,7 +81,10 @@ export function ColorPickerField({ value, onChange, presets = [] }) {
 // a short form).
 export function Modal({ title, onClose, children, footer, width }) {
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    // Clicking the dimmed area outside does NOT close the dialog — a stray
+    // click (or a text-selection drag that ends outside) used to throw away
+    // everything typed. Close with ×, Cancel or the form's own buttons.
+    <div className="modal-backdrop">
       <div className="modal" style={width ? { maxWidth: width } : undefined}>
         <div className="modal-h">
           <h3>{title}</h3>

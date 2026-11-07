@@ -423,7 +423,7 @@ export function Documentasheion() {
         </div>
       </div>
       {stage === 'leave' && (
-        <div className="modal-backdrop" onClick={() => setStage(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 880 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="modal-h">
               <h3>Days with no leave remark</h3>
@@ -490,7 +490,7 @@ export function Documentasheion() {
         </div>
       )}
       {stage === 'punch' && (
-        <div className="modal-backdrop" onClick={() => setStage(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 920 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="modal-h">
               <h3>Days with only one punch</h3>
@@ -557,7 +557,7 @@ export function Documentasheion() {
         </div>
       )}
       {stage === 'remark' && (
-        <div className="modal-backdrop" onClick={() => setStage(null)}>
+        <div className="modal-backdrop">
           <div className="modal" style={{ maxWidth: 960 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="modal-h">
               <h3>Remarks that are not a leave code</h3>
