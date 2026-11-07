@@ -9,6 +9,7 @@ import { ChecklistView } from '../components/tasks/Checklist.jsx';
 import { MacroListView } from '../components/tasks/MacroList.jsx';
 import { cloneFresh, countItems, newItemId, toggleItem } from '../components/tasks/checklist.js';
 import { cloneMacros } from '../utils/formMacros.js';
+import { tasksToText, downloadText } from '../utils/exportTasks.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
@@ -120,6 +121,11 @@ export function Tasks() {
     setExpanded(new Set());
   }
 
+  function exportTxt() {
+    const text = tasksToText(groups, checklistOf, { sortLabel: sortMode === 'priority' ? 'priority' : 'deadline' });
+    downloadText(`tasks-${new Date().toISOString().slice(0, 10)}.txt`, text);
+  }
+
   // --- Task instances -------------------------------------------------
   async function createInstance(values) {
     await api.post('/task-instances', values, viewingId || undefined);
@@ -163,6 +169,11 @@ export function Tasks() {
       <div className="page-head">
         <div><div className="eyebrow">To do</div><h1>Tasks</h1></div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {items.length > 0 && (
+            <button className="btn ghost" onClick={exportTxt} title="Download the whole list, with checklists, as a .txt file">
+              Export .txt
+            </button>
+          )}
           <button className="btn ghost" onClick={() => setShowInstances(true)}>
             Task instances{instances.length ? ` (${instances.length})` : ''}
           </button>
