@@ -19,6 +19,7 @@ const MODULES = [
   ['notetags', 'Note Tag'],
   ['maps', 'Destination'], // key stays `maps` so existing sharing settings still apply
   ['poi', 'Point of Interest'],
+  ['calorie', 'Calorie'],
 ];
 
 export function Circle() {

@@ -18,6 +18,7 @@ export const NAV_ITEMS = [
   { to: '/timesheet', label: 'Timesheet', icon: '▥', key: 'timesheet', group: 'work' },
   { to: '/calendar', label: 'Calendar', icon: '▧', key: 'calendar', group: 'plan' },
   { to: '/filing', label: 'Filing desk', icon: '▦', key: 'filing', group: 'plan' },
+  { to: '/calorie', label: 'Calorie', icon: '♥', key: 'calorie', group: 'health' },
   { to: '/notes', label: 'Notes', icon: '✎', key: 'notes', group: 'notes' },
   { to: '/note-tags', label: 'Note Tag', icon: '#', key: 'notetags', group: 'notes' },
   // The `maps` key (and /api/map-destinations) keep their original names so
@@ -36,6 +37,7 @@ export const NAV_ITEMS = [
 export const NAV_GROUPS = [
   { id: 'work', label: 'Work', short: 'Work' },
   { id: 'plan', label: 'Planning', short: 'Plan' },
+  { id: 'health', label: 'Health', short: 'Health' },
   { id: 'notes', label: 'Notes', short: 'Notes' },
   { id: 'places', label: 'Places', short: 'Places' },
   { id: 'tools', label: 'Tools', short: 'Tools' },

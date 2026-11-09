@@ -34,6 +34,11 @@ import tagWordRoutes from './routes/tagWords.js';
 import mapDestinationRoutes from './routes/mapDestinations.js';
 import poiRoutes from './routes/pois.js';
 import { banksRouter, bankHistoriesRouter } from './routes/bankbook.js';
+import CalorieEntry from './models/CalorieEntry.js';
+import Food from './models/Food.js';
+import Workout from './models/Workout.js';
+import WorkoutSet from './models/WorkoutSet.js';
+import workoutRoutes from './routes/workouts.js';
 
 // Just the Express app — no .listen(), no DB connect, no Socket.io
 // attached. Two entry points share this:
@@ -78,6 +83,12 @@ app.use('/api/map-destinations', mapDestinationRoutes);
 app.use('/api/pois', poiRoutes);
 app.use('/api/banks', banksRouter);
 app.use('/api/bank-histories', bankHistoriesRouter);
+// Calorie module: the daily log plus its three libraries (foods, workouts, sets).
+app.use('/api/calorie-entries', resourceRouter(CalorieEntry, { sortBy: '-date', moduleKey: 'calorie' }));
+app.use('/api/foods', resourceRouter(Food, { sortBy: 'name', moduleKey: 'calorie' }));
+app.use('/api/workouts', workoutRoutes); // workout delete also removes it from sets
+app.use('/api/workouts', resourceRouter(Workout, { sortBy: 'name', moduleKey: 'calorie' }));
+app.use('/api/workout-sets', resourceRouter(WorkoutSet, { sortBy: 'name', moduleKey: 'calorie' }));
 
 app.use((err, req, res, next) => {
   console.error(err);

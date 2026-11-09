@@ -8,6 +8,7 @@ import { Login } from './pages/Login.jsx';
 import { Dashboard } from './pages/Dashboard.jsx';
 import { Clients } from './pages/Clients.jsx';
 import { Money } from './pages/Money.jsx';
+import { Calorie } from './pages/Calorie.jsx';
 import { Bankbook } from './pages/Bankbook.jsx';
 // MGOctaviano07Oct2026: Invoices page removed; Project Timeline added.
 import { ProjectTimeline } from './pages/ProjectTimeline.jsx';
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/clients" element={<Clients />} />
             <Route path="/money" element={<Money />} />
             <Route path="/bankbook" element={<Bankbook />} />
+            <Route path="/calorie" element={<Calorie />} />
             {/* MGOctaviano07Oct2026: /invoices route removed */}
             <Route path="/project-timeline" element={<ProjectTimeline />} />
             <Route path="/tasks" element={<Tasks />} />
