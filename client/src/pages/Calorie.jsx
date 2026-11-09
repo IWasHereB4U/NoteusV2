@@ -47,6 +47,33 @@ function measureText(w) {
   return w.measure === 'duration' ? `${a} min` : `${a} rep${a === 1 ? '' : 's'}`;
 }
 
+// Muscle groups a workout can be good for — kept in sync with BODY_PARTS in
+// the Workout model on the server.
+const BODY_PARTS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms', 'abs', 'glutes', 'quads', 'hamstrings', 'calves', 'full body'];
+const partLabel = (p) => p.charAt(0).toUpperCase() + p.slice(1);
+
+const partsOf = (w) => w.bodyParts || []; // older workouts have none saved
+
+// Every body part any workout in the set is good for (de-duplicated, in the
+// standard order) — derived live, so editing a workout updates its sets.
+function setParts(set, workoutsById) {
+  const found = new Set();
+  (set.items || []).forEach((it) => {
+    const w = workoutsById.get(String(it.workoutId));
+    if (w) partsOf(w).forEach((p) => found.add(p));
+  });
+  return BODY_PARTS.filter((p) => found.has(p));
+}
+
+function PartTags({ parts }) {
+  if (!parts.length) return null;
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+      {parts.map((p) => <span key={p} className="tag green">{partLabel(p)}</span>)}
+    </span>
+  );
+}
+
 // Total calories burned by a set: every listed workout's calories × how many
 // rounds of it the set calls for. Always derived from the workouts' current
 // numbers, so editing a workout updates every set that uses it.
@@ -171,6 +198,8 @@ export function Calorie() {
   const [logDate, setLogDate] = useState(localISODate());
   const [qty, setQty] = useState({});
   const [flash, setFlash] = useState('');
+  const [libSearch, setLibSearch] = useState('');
+  const [libParts, setLibParts] = useState([]); // body-part filter for workouts + sets (matches any)
 
   const [period, setPeriod] = useState('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -412,6 +441,26 @@ export function Calorie() {
     </>
   );
 
+  // Search + body-part filter for the Quick add lists. Search matches names
+  // (a set also matches the names of the workouts inside it) and body parts;
+  // the chips keep anything good for at least one selected part.
+  const q = libSearch.trim().toLowerCase();
+  const hasPartFilter = libParts.length > 0;
+  const foodsView = foods.filter((f) => !q || f.name.toLowerCase().includes(q));
+  const workoutsView = workouts.filter((w) => {
+    const parts = partsOf(w);
+    if (hasPartFilter && !parts.some((p) => libParts.includes(p))) return false;
+    return !q || w.name.toLowerCase().includes(q) || parts.some((p) => p.includes(q));
+  });
+  const setsView = sets.filter((s) => {
+    const parts = setParts(s, workoutsById);
+    if (hasPartFilter && !parts.some((p) => libParts.includes(p))) return false;
+    if (!q) return true;
+    const names = (s.items || []).map((it) => workoutsById.get(String(it.workoutId))?.name || '');
+    return s.name.toLowerCase().includes(q) || names.some((n) => n.toLowerCase().includes(q)) || parts.some((p) => p.includes(q));
+  });
+  const noMatch = <div className="empty"><b>No matches</b>Try a different search or clear the body-part filter.</div>;
+
   const libTitle = { foods: 'food', workouts: 'workout', sets: 'set' }[libTab];
   const openNewLib = () => {
     if (libTab === 'foods') setFoodModal({});
@@ -482,7 +531,7 @@ export function Calorie() {
             <h2>Quick add</h2>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               {LIB_TABS.map(([val, label]) => (
-                <button key={val} className={`btn ${libTab === val ? '' : 'ghost'} sm`} onClick={() => setLibTab(val)}>{label}</button>
+                <button key={val} className={`btn ${libTab === val ? '' : 'ghost'} sm`} onClick={() => { setLibTab(val); setLibSearch(''); }}>{label}</button>
               ))}
               <span style={{ width: 1, height: 20, background: 'var(--line)', margin: '0 2px' }} />
               <button className="btn ghost sm" onClick={openNewLib}>+ New {libTitle}</button>
@@ -495,15 +544,45 @@ export function Calorie() {
               The number box is servings (foods) or rounds (workouts, sets).
             </span>
           </div>
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className="field"
+                type="search"
+                placeholder={libTab === 'foods' ? 'Search foods…' : libTab === 'workouts' ? 'Search workouts or body parts…' : 'Search sets, their workouts or body parts…'}
+                value={libSearch}
+                onChange={(e) => setLibSearch(e.target.value)}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              {(libSearch || (libTab !== 'foods' && hasPartFilter)) && (
+                <button className="btn ghost sm" onClick={() => { setLibSearch(''); setLibParts([]); }}>Clear</button>
+              )}
+            </div>
+            {libTab !== 'foods' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Good for</span>
+                {BODY_PARTS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`btn ${libParts.includes(p) ? '' : 'ghost'} sm`}
+                    onClick={() => setLibParts((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]))}
+                  >
+                    {partLabel(p)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {error && <div className="auth-error" style={{ margin: '12px 18px 0' }}>{error}</div>}
           {flash && <div style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--teal)' }}>{flash}</div>}
 
           {libTab === 'foods' && (
             foods.length === 0 ? (
               <div className="empty"><b>No foods yet</b>Save a food and its calories to log it in one tap.</div>
-            ) : (
+            ) : foodsView.length === 0 ? noMatch : (
               <div className="stack">
-                {foods.map((f) => (
+                {foodsView.map((f) => (
                   <div key={f._id} className="row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div style={{ fontWeight: 500 }}>{f.name}</div>
                     <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--amber)' }}>{fcal(f.calories)}</div>
@@ -521,13 +600,14 @@ export function Calorie() {
           {libTab === 'workouts' && (
             workouts.length === 0 ? (
               <div className="empty"><b>No workouts yet</b>Save a workout with its calories burned and reps or duration.</div>
-            ) : (
+            ) : workoutsView.length === 0 ? noMatch : (
               <div className="stack">
-                {workouts.map((w) => (
+                {workoutsView.map((w) => (
                   <div key={w._id} className="row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>{w.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--ink3)' }}>{measureText(w) || '—'}</div>
+                      <div style={{ marginTop: 4 }}><PartTags parts={partsOf(w)} /></div>
                     </div>
                     <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--teal)' }}>−{fcal(w.calories)}</div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -544,9 +624,9 @@ export function Calorie() {
           {libTab === 'sets' && (
             sets.length === 0 ? (
               <div className="empty"><b>No sets yet</b>Group workouts into a routine and burn the whole thing at once.</div>
-            ) : (
+            ) : setsView.length === 0 ? noMatch : (
               <div className="stack">
-                {sets.map((s) => (
+                {setsView.map((s) => (
                   <div key={s._id} className="row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div>
                       <div style={{ fontWeight: 500 }}>{s.name}</div>
@@ -558,6 +638,7 @@ export function Calorie() {
                             return w ? `${w.name}${Number(it.times) > 1 ? ` ×${it.times}` : ''}` : null;
                           }).filter(Boolean).join(' · ')}
                       </div>
+                      <div style={{ marginTop: 4 }}><PartTags parts={setParts(s, workoutsById)} /></div>
                     </div>
                     <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--teal)' }}>−{fcal(setTotal(s, workoutsById))}</div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -645,6 +726,7 @@ function WorkoutModal({ workout, onSave, onClose }) {
     calories: workout.calories ?? '',
     measure: workout.measure || 'repetition',
     amount: workout.amount ?? '',
+    bodyParts: partsOf(workout),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -660,6 +742,7 @@ function WorkoutModal({ workout, onSave, onClose }) {
         calories: Math.max(0, Number(values.calories) || 0),
         measure: values.measure,
         amount: Math.max(0, Number(values.amount) || 0),
+        bodyParts: values.bodyParts,
       });
       onClose();
     } catch (err) {
@@ -702,6 +785,25 @@ function WorkoutModal({ workout, onSave, onClose }) {
             <label>{values.measure === 'duration' ? 'Duration (minutes)' : 'Repetitions'}</label>
             <input className="field" type="number" min="0" step="1" value={values.amount} onChange={(e) => set('amount', e.target.value)} />
           </div>
+          <div className="field-row" style={{ gridColumn: 'span 2' }}>
+            <label>Good for (pick any)</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {BODY_PARTS.map((p) => {
+                const on = values.bodyParts.includes(p);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`btn ${on ? '' : 'ghost'} sm`}
+                    aria-pressed={on}
+                    onClick={() => set('bodyParts', on ? values.bodyParts.filter((x) => x !== p) : [...values.bodyParts, p])}
+                  >
+                    {partLabel(p)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 10 }}>
           The calories are what one round of this amount burns, e.g. 20 repetitions = 8 kcal.
@@ -725,6 +827,8 @@ function SetModal({ set, workouts, onSave, onClose }) {
     const w = byId.get(r.workoutId);
     return s + (w ? Number(w.calories || 0) * Math.max(1, Number(r.times) || 1) : 0);
   }, 0));
+
+  const parts = setParts({ items: rows }, byId);
 
   function patchRow(i, patch) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -808,9 +912,15 @@ function SetModal({ set, workouts, onSave, onClose }) {
           )}
         </div>
 
-        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Total burned</span>
-          <span style={{ fontFamily: 'var(--disp)', fontWeight: 600, fontSize: 22, color: 'var(--teal)' }}>{fcal(total)}</span>
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Good for</span>
+            {parts.length ? <PartTags parts={parts} /> : <span style={{ fontSize: 12, color: 'var(--ink3)' }}>—</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Total burned</span>
+            <span style={{ fontFamily: 'var(--disp)', fontWeight: 600, fontSize: 22, color: 'var(--teal)' }}>{fcal(total)}</span>
+          </div>
         </div>
       </form>
     </Modal>
