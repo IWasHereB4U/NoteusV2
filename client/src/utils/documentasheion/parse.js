@@ -83,6 +83,11 @@ export const fmtDate = (ms) => {
   return `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}/${d.getUTCFullYear()}`;
 };
 export const fmtTime = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+export const fmtDur = (min) => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+};
 export const fmtDateTime = (ms, min) => `${fmtDate(ms)} ${fmtTime(min)}`;
 
 // ---- leave handling ----------------------------------------------------
@@ -135,7 +140,12 @@ const offset = (t, start) => ((t - start + 720 + 1440) % 1440) - 720;
 //   shiftTimes  : Map of upper-cased shift name/code -> { start, end } minutes
 //   overrides   : { [sourceRowNumber]: 'VL'|'SL'|'HVL'|'HSL'|'LWOP' } picked in the leave dialog
 //   punchFixes  : { [sourceRowNumber]: { mode: 'match' | 'manual', timeIn, timeOut } } from the missing-punch dialog
-export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, punchFixes = {} } = {}) {
+//   holidays    : Set / array of holiday dates (UTC-midnight ms) picked on the calendar
+//   otFixes     : { [sourceRowNumber]: { mode, otStart, otEnd } } from the three overtime dialogs
+//                 holiday with attendance, no OT : 'match' | 'manual'   (default: skip)
+//                 OT not covered by the punches  : 'trim' | 'remove' | 'manual'   (default: keep as is)
+export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, punchFixes = {}, holidays = [], otFixes = {} } = {}) {
+  const holidaySet = new Set(holidays);
   const warnings = [];
   const warn = (row, message) => warnings.push({ row, message });
 
@@ -225,6 +235,11 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
   const review = []; // working days with no punches at all and no leave remark
   const reviewPartial = []; // working days with only a time in or only a time out and no leave remark
   const reviewRemark = []; // days with a remark that is not a leave code (e.g. "test") and nothing else needing a decision
+  const reviewHolidayOt = []; // holiday + attendance + no OT in the sheet -> ask
+  const reviewOtMismatch = []; // normal day: OT not covered by time in / out
+  const reviewHolidayMismatch = []; // holiday: OT not covered by time in / out
+  let holidayOtAdded = 0;
+  let otEdited = 0;
   let punchFixed = 0;
   let onePunchSkipped = 0; // days with only one punch, left out of every file
   let offDayOt = 0; // OFF days that have attendance -> overtime
@@ -345,29 +360,116 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     }
 
     // ---- overtime
+    const isHoliday = holidaySet.has(dateMs);
+    const hasAtt = hasIn && hasOut;
+    const inAbs = hasAtt ? inM : null;
+    const outAbs = hasAtt ? outM + (shiftCrosses ? 1440 : 0) : null; // minutes after midnight of the attend date
+    const otFix = otFixes[rowNum];
+    const rangeText = (o) => `${fmtTime(o.s % 1440)}–${fmtTime(o.e % 1440)}`;
+    const base = {
+      rowNum, empNo, date: dateStr, shift: rec.shift, remarks: rec.remarks,
+      timeIn: hasIn ? fmtTime(inM) : '', timeOut: hasOut ? fmtTime(outM) : '',
+    };
+
+    // OT start/end as minutes after midnight of the attend date. On a shift that
+    // crosses midnight, a clock time at or before the out time is the next day.
+    const absOt = (s, e) => {
+      const nextDay = (t) => (shiftCrosses && t <= outM ? 1 : 0);
+      const sDay = nextDay(s);
+      let eDay = nextDay(e);
+      if (!shiftCrosses && e < s) eDay = 1;
+      if (eDay * 1440 + e < sDay * 1440 + s) eDay += 1;
+      return { s: sDay * 1440 + s, e: eDay * 1440 + e };
+    };
+    // Manual times typed in a dialog -> absolute OT, or null when unreadable.
+    const manualOt = () => {
+      const ms = otFix.otStart ? parseTime(otFix.otStart) : null;
+      const me = otFix.otEnd ? parseTime(otFix.otEnd) : null;
+      if (ms === null || me === null || Number.isNaN(ms) || Number.isNaN(me)) {
+        warn(rowNum, `${empNo} ${dateStr}: the manual overtime time is missing or not readable — left as it was.`);
+        return null;
+      }
+      return absOt(ms, me);
+    };
+
+    let ot = null; // { s, e } the overtime that goes into the Overtime Request
     let otCrosses = false;
     if ((otS === null) !== (otE === null)) {
       warn(rowNum, `${empNo} ${dateStr}: overtime has only a ${otS === null ? 'end' : 'start'} time — overtime row skipped.`);
     } else if (otS !== null) {
-      // On a shift that crosses midnight, a clock time at or before the out
-      // time belongs to the next calendar day.
-      const nextDay = (t) => (shiftCrosses && t <= outM ? 1 : 0);
-      const sDay = nextDay(otS);
-      let eDay = nextDay(otE);
-      if (!shiftCrosses && otE < otS) eDay = 1;
-      if (eDay * 1440 + otE < sDay * 1440 + otS) eDay += 1;
-      otCrosses = sDay > 0 || eDay > 0;
-      overtime.push([empNo, dateStr, '', fmtDate(dateMs + sDay * DAY), fmtTime(otS), fmtDate(dateMs + eDay * DAY), fmtTime(otE)]);
+      ot = absOt(otS, otE);
+      // OK only when time in <= OT start and time out >= OT end. Anything else is an anomaly.
+      const startGap = hasAtt ? inAbs - ot.s : 0; // > 0: OT starts before the person came in
+      const endGap = hasAtt ? ot.e - outAbs : 0; // > 0: OT ends after the person left
+      if (!hasAtt || startGap > 0 || endGap > 0) {
+        const parts = [];
+        if (!hasAtt) parts.push('no time in / time out to cover it');
+        if (startGap > 0) parts.push(`OT starts ${fmtDur(startGap)} before time in (${fmtTime(inM)})`);
+        if (endGap > 0) parts.push(`OT ends ${fmtDur(endGap)} after time out (${fmtTime(outM)})`);
+        const diff = parts.join('; ');
+        let trim = null;
+        if (hasAtt) {
+          const ts = Math.max(ot.s, inAbs);
+          const te = Math.min(ot.e, outAbs);
+          if (te > ts) trim = { s: ts, e: te };
+        }
+        (isHoliday ? reviewHolidayMismatch : reviewOtMismatch).push({
+          ...base, otStart: fmtTime(otS), otEnd: fmtTime(otE), diff,
+          trimText: trim ? rangeText(trim) : '', canTrim: !!trim,
+        });
+        const mode = otFix?.mode;
+        if (mode === 'remove') {
+          ot = null;
+          otEdited += 1;
+        } else if (mode === 'trim') {
+          if (trim) { ot = trim; otEdited += 1; } else {
+            ot = null;
+            warn(rowNum, `${empNo} ${dateStr}: nothing of the overtime falls inside the attendance — overtime removed.`);
+          }
+        } else if (mode === 'manual') {
+          const m = manualOt();
+          if (m) { ot = m; otEdited += 1; }
+        } else {
+          warn(rowNum, `${empNo} ${dateStr}: ${isHoliday ? 'holiday ' : ''}overtime ${fmtTime(otS)}–${fmtTime(otE)} is not covered by the attendance — ${diff}. Kept as it is in the sheet.`);
+        }
+      }
+    } else if (hasAtt && !leave) {
+      if (isHoliday) {
+        // Holiday with attendance and no OT: the OT has to match the whole shift.
+        // (OFF / no shift times: the punches are the only thing to match.)
+        const st = timesOf(shiftCode);
+        const useShift = st && shiftKey !== 'OFF' && shiftKey !== 'LWOP';
+        const match = useShift ? { s: st.start, e: st.end <= st.start ? st.end + 1440 : st.end } : { s: inAbs, e: outAbs };
+        reviewHolidayOt.push({
+          ...base, otStart: '', otEnd: '',
+          matchStart: fmtTime(match.s % 1440), matchEnd: fmtTime(match.e % 1440),
+          matchSource: useShift ? 'the shift' : 'time in / out', canMatch: true,
+        });
+        if (otFix?.mode === 'match') {
+          ot = match;
+          holidayOtAdded += 1;
+        } else if (otFix?.mode === 'manual') {
+          const m = manualOt();
+          if (m) { ot = m; holidayOtAdded += 1; }
+        } else {
+          warn(rowNum, `${empNo} ${dateStr}: holiday with attendance (${fmtTime(inM)}–${fmtTime(outM)}) but no overtime — skipped.`);
+        }
+      } else if (isOffDay) {
+        // ---- OFF day with attendance -> counts as overtime
+        // The person was not scheduled but punched, so the worked time is OT.
+        ot = { s: inM, e: outM + (outM < inM ? 1440 : 0) };
+        offDayOt += 1;
+        warn(rowNum, `${empNo} ${dateStr}: shift is OFF but there is attendance (${fmtTime(inM)}–${fmtTime(outM)}) — added to Overtime Request.`);
+      }
     }
 
-    // ---- OFF day with attendance -> counts as overtime
-    // The person was not scheduled but punched, so the worked time is OT.
-    // Approved OT times in the sheet win; otherwise the punches are the OT window.
-    if (isOffDay && !leave && otS === null && otE === null && (hasIn && hasOut)) {
-      const endDay = outM < inM ? 1 : 0;
-      overtime.push([empNo, dateStr, '', dateStr, fmtTime(inM), fmtDate(dateMs + endDay * DAY), fmtTime(outM)]);
-      offDayOt += 1;
-      warn(rowNum, `${empNo} ${dateStr}: shift is OFF but there is attendance (${fmtTime(inM)}–${fmtTime(outM)}) — added to Overtime Request.`);
+    if (ot) {
+      overtime.push([
+        empNo, dateStr, '',
+        fmtDate(dateMs + Math.floor(ot.s / 1440) * DAY), fmtTime(ot.s % 1440),
+        fmtDate(dateMs + Math.floor(ot.e / 1440) * DAY), fmtTime(ot.e % 1440),
+      ]);
+      otCrosses = ot.s >= 1440 || ot.e >= 1440;
     }
 
     // ---- attendance
@@ -422,6 +524,9 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
     review,
     reviewPartial,
     reviewRemark,
+    reviewHolidayOt,
+    reviewOtMismatch,
+    reviewHolidayMismatch,
     warnings,
     stats: {
       employees: employees.size,
@@ -436,6 +541,9 @@ export function buildDatasets(rows, { knownShifts, shiftTimes, overrides = {}, p
       leave: leaveCount,
       punchFixed,
       offDayOt,
+      holidayOtAdded,
+      otEdited,
+      holidays: holidaySet.size,
       onePunchSkipped,
     },
   };

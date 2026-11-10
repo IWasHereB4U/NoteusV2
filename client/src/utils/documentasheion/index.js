@@ -199,15 +199,32 @@ export async function prepare(ExcelJS, attendanceData, templates) {
   const { known, times } = await readMasterShifts(ExcelJS, templates.schedule);
   const opts = { knownShifts: known, shiftTimes: times };
   const first = buildDatasets(rows, opts); // no overrides yet — just to find what needs asking
-  return { ExcelJS, rows, templates, opts, review: first.review, reviewPartial: first.reviewPartial, reviewRemark: first.reviewRemark };
+  return {
+    ExcelJS, rows, templates, opts,
+    dates: first.schedule.dates.map((d) => d.ms), // every date in the sheet, for the holiday calendar
+    review: first.review, reviewPartial: first.reviewPartial, reviewRemark: first.reviewRemark,
+  };
+}
+
+// Re-read the sheet with the decisions made so far. Used to find which days need
+// an overtime decision (holiday with attendance, OT not covered by the punches).
+export function analyze(prepared, { overrides = {}, punchFixes = {}, holidays = [], otFixes = {} } = {}) {
+  const d = buildDatasets(prepared.rows, { ...prepared.opts, overrides, punchFixes, holidays, otFixes });
+  return {
+    reviewHolidayOt: d.reviewHolidayOt,
+    reviewOtMismatch: d.reviewOtMismatch,
+    reviewHolidayMismatch: d.reviewHolidayMismatch,
+  };
 }
 
 // Step 2: apply the leave choices made in the dialog and write the four files.
 // overrides  = { [sourceRowNumber]: 'VL' | 'SL' | 'HVL' | 'HSL' | 'LWOP' }
 // punchFixes = { [sourceRowNumber]: { mode: 'match' | 'manual', timeIn, timeOut } }
-export async function finish(prepared, overrides = {}, onStatus, punchFixes = {}) {
+// holidays   = array of holiday dates (UTC ms) picked on the calendar
+// otFixes    = { [sourceRowNumber]: { mode, otStart, otEnd } } from the overtime dialogs
+export async function finish(prepared, overrides = {}, onStatus, punchFixes = {}, holidays = [], otFixes = {}) {
   const { ExcelJS, rows, templates, opts } = prepared;
-  const data = buildDatasets(rows, { ...opts, overrides, punchFixes });
+  const data = buildDatasets(rows, { ...opts, overrides, punchFixes, holidays, otFixes });
 
   const files = [];
   for (const o of OUTPUTS) {
@@ -221,7 +238,12 @@ export async function finish(prepared, overrides = {}, onStatus, punchFixes = {}
       buffer: buf,
     });
   }
-  return { files, stats: data.stats, warnings: data.warnings, review: data.review };
+  return {
+    files, stats: data.stats, warnings: data.warnings, review: data.review,
+    reviewHolidayOt: data.reviewHolidayOt,
+    reviewOtMismatch: data.reviewOtMismatch,
+    reviewHolidayMismatch: data.reviewHolidayMismatch,
+  };
 }
 
 // Convenience for tests / scripts: both steps in one go.
@@ -244,6 +266,13 @@ export async function buildReviewList(rows, choiceOf = () => '') {
     { header: 'Attend_Time IN', key: 'in', width: 15 },
     { header: 'Attend_Time OUT', key: 'out', width: 15 },
     { header: 'Remarks', key: 'remarks', width: 28 },
+    ...(rows.some((d) => d.otStart || d.matchStart)
+      ? [
+        { header: 'OT Start', key: 'otStart', width: 12 },
+        { header: 'OT End', key: 'otEnd', width: 12 },
+        { header: 'Difference / suggestion', key: 'diff', width: 48 },
+      ]
+      : []),
     { header: 'What to do', key: 'todo', width: 22 },
   ];
   ws.getRow(1).font = { bold: true };
@@ -257,6 +286,9 @@ export async function buildReviewList(rows, choiceOf = () => '') {
       in: d.timeIn || '',
       out: d.timeOut || '',
       remarks: d.remarks || '',
+      otStart: d.otStart || d.matchStart || '',
+      otEnd: d.otEnd || d.matchEnd || '',
+      diff: d.diff || (d.matchStart ? `Match would set OT to ${d.matchStart}–${d.matchEnd} (${d.matchSource})` : ''),
       todo: choiceOf(d) || '',
     });
   });
