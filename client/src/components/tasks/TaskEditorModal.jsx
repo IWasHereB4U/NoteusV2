@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Modal } from '../Modal.jsx';
 import { ChecklistEditor } from './Checklist.jsx';
 import { MacroListEditor } from './MacroList.jsx';
-import { cloneFresh, newItemId, normalizeLink, pruneEmpty } from './checklist.js';
+import { cloneFresh, enableVerification, newItemId, normalizeLink, pruneEmpty } from './checklist.js';
 import { cloneMacros } from '../../utils/formMacros.js';
 
 // One editor for both a Task and a Task Instance — they share name, link,
@@ -18,6 +18,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
     link: initial.link || '',
     note: initial.note || '',
     checklist: initial.checklist || [],
+    needsVerification: !!initial.needsVerification,
     macros: initial.macros || [],
     clientId: initial.clientId || '',
     due: initial.due || '',
@@ -29,6 +30,15 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
 
   const set = (k, v) => setValues((s) => ({ ...s, [k]: v }));
 
+  function setNeedsVerification(on) {
+    setValues((s) => ({
+      ...s,
+      needsVerification: on,
+      // Turning it on: items already ticked start with both boxes ticked.
+      checklist: on ? enableVerification(s.checklist) : s.checklist,
+    }));
+  }
+
   function startFrom(instanceId) {
     const inst = instances.find((i) => i._id === instanceId);
     if (!inst) return set('fromInstance', null);
@@ -38,6 +48,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
       link: inst.link || '',
       note: inst.note || '',
       checklist: cloneFresh(inst.checklist),
+      needsVerification: !!inst.needsVerification,
       macros: cloneMacros(inst.macros, newItemId),
       fromInstance: inst._id,
     }));
@@ -53,6 +64,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
         link: normalizeLink(values.link),
         note: values.note,
         checklist: pruneEmpty(values.checklist),
+        needsVerification: values.needsVerification,
         macros: values.macros.map((m) => ({ ...m, name: (m.name || '').trim() || 'Untitled macro' })),
       };
       await onSubmit(
@@ -151,7 +163,23 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
 
         <div className="field-row">
           <label>Checklist</label>
-          <ChecklistEditor items={values.checklist} onChange={(v) => set('checklist', v)} />
+          <label htmlFor={fid('verify')} className="verify-option">
+            <input
+              id={fid('verify')}
+              type="checkbox"
+              checked={values.needsVerification}
+              onChange={(e) => setNeedsVerification(e.target.checked)}
+            />
+            <span>
+              <b>Needs verification</b>
+              <small>Each item gets two boxes: red = none ticked, yellow = one, green = both.</small>
+            </span>
+          </label>
+          <ChecklistEditor
+            items={values.checklist}
+            verify={values.needsVerification}
+            onChange={(v) => set('checklist', v)}
+          />
         </div>
 
         <div className="field-row">

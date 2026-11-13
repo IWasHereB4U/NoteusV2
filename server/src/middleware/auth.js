@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import User, { effectiveModules } from '../models/User.js';
 
 // Verifies the JWT and attaches req.user (the logged-in account).
 export async function requireAuth(req, res, next) {
@@ -61,7 +61,7 @@ export function requireModuleShared(moduleKey) {
       (c) => c.status === 'accepted' && String(c.user) === String(req.user._id)
     );
     if (!entry) return res.status(403).json({ error: 'Not in this person\'s circle' });
-    if (!entry.sharedModules.includes(moduleKey)) {
+    if (!effectiveModules(entry).includes(moduleKey)) {
       return res.status(403).json({ error: "This person hasn't shared this module with you" });
     }
     next();

@@ -8,7 +8,7 @@ function initials(name = '') {
 }
 
 export function Topbar() {
-  const { user, circle, viewingId, setViewingId, viewingSelf, logout } = useAuth();
+  const { user, circle, viewingId, setViewingId, viewingSelf, logout, activeCircleId, selectCircle } = useAuth();
   const location = useLocation();
   const viewingUser = circle.viewable.find((v) => v.id === viewingId);
   // Whatever module the current page belongs to (null for Dashboard,
@@ -16,12 +16,31 @@ export function Topbar() {
   // here while you're on a module they haven't shared with you, rather
   // than switching to them and landing on a page you can't actually see.
   const currentModule = moduleForPath(location.pathname);
+  // Only people in the circle picked in the switcher (or everyone, for "All").
+  const roster = circle.viewable.filter(
+    (p) => p.self || activeCircleId === 'all' || (p.circleIds || []).some((id) => String(id) === String(activeCircleId))
+  );
 
   return (
     <header className="topbar">
       <div className="roster">
-        <span className="roster-label">Circle</span>
-        {circle.viewable.map((person) => {
+        {circle.circles.length > 1 ? (
+          <select
+            className="circle-switch"
+            value={activeCircleId}
+            onChange={(e) => selectCircle(e.target.value)}
+            title="Switch which circle you're viewing"
+            aria-label="Circle"
+          >
+            <option value="all">All circles</option>
+            {circle.circles.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="roster-label">Circle</span>
+        )}
+        {roster.map((person) => {
           const blocked = !person.self && currentModule?.key && !person.sharedModules?.includes(currentModule.key);
           return (
             <div

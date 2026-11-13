@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import User, { MODULE_KEYS } from '../models/User.js';
+import User, { MODULE_KEYS, effectiveModules, ensureCircles } from '../models/User.js';
 import Settings from '../models/Settings.js';
 
 function signToken(userId) {
@@ -119,21 +119,126 @@ export async function updateColor(req, res) {
   res.json({ user: req.user.toSafeJSON() });
 }
 
-// Sets what ONE specific circle member can see of my book. Scoped to that
-// member's own circle entry, so it never touches what anyone else sees.
+// --- Circles (named groups of people) ---------------------------------------
+//
+// A person can keep several circles ("Family", "Work", ...). Each connection
+// (someone who accepted an invite) can be in one or more of YOUR circles, and
+// what they can see of your book is set separately per circle they're in.
+// If they're in two circles, they see the union of both.
+
+const cleanModules = (list) => (Array.isArray(list) ? list.filter((k) => k !== 'invoices') : list);
+const validModules = (list) => Array.isArray(list) && list.every((k) => MODULE_KEYS.includes(k));
+const sameId = (a, b) => String(a) === String(b);
+
+function findCircle(user, circleId) {
+  return user.circles.find((c) => sameId(c._id, circleId));
+}
+function acceptedEntry(user, userId) {
+  return user.circle.find((c) => c.status === 'accepted' && sameId(c.user, userId));
+}
+
+export async function createCircle(req, res) {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Give the circle a name' });
+  if (name.length > 40) return res.status(400).json({ error: 'Circle names can be up to 40 characters' });
+  ensureCircles(req.user);
+  if (req.user.circles.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    return res.status(409).json({ error: 'You already have a circle with that name' });
+  }
+  req.user.circles.push({ name });
+  await req.user.save();
+  const created = req.user.circles[req.user.circles.length - 1];
+  res.status(201).json({ id: created._id, name: created.name });
+}
+
+export async function renameCircle(req, res) {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Give the circle a name' });
+  if (name.length > 40) return res.status(400).json({ error: 'Circle names can be up to 40 characters' });
+  ensureCircles(req.user);
+  const circle = findCircle(req.user, req.params.circleId);
+  if (!circle) return res.status(404).json({ error: 'No such circle' });
+  if (req.user.circles.some((c) => !sameId(c._id, circle._id) && c.name.toLowerCase() === name.toLowerCase())) {
+    return res.status(409).json({ error: 'You already have a circle with that name' });
+  }
+  circle.name = name;
+  await req.user.save();
+  res.json({ ok: true });
+}
+
+// Deleting a circle never disconnects anyone. People who were only in that
+// circle are moved to your first remaining circle with NOTHING shared, so a
+// delete can't accidentally widen anyone's access — turn modules back on there
+// if you want them to keep seeing something.
+export async function deleteCircle(req, res) {
+  ensureCircles(req.user);
+  if (req.user.circles.length <= 1) return res.status(400).json({ error: "You can't delete your only circle" });
+  const circle = findCircle(req.user, req.params.circleId);
+  if (!circle) return res.status(404).json({ error: 'No such circle' });
+
+  req.user.circles = req.user.circles.filter((c) => !sameId(c._id, circle._id));
+  const fallback = req.user.circles[0];
+  for (const entry of req.user.circle) {
+    entry.memberships = entry.memberships.filter((m) => !sameId(m.circle, circle._id));
+    if (entry.status === 'accepted' && entry.memberships.length === 0) {
+      entry.memberships = [{ circle: fallback._id, sharedModules: [] }];
+    }
+  }
+  await req.user.save();
+  res.json({ ok: true });
+}
+
+// Sets what ONE person can see of my book *through one specific circle*.
+// Scoped to that person's membership in that circle, so it never touches what
+// they get from another circle or what anyone else sees.
 export async function updateSharedModulesForMember(req, res) {
   const { userId } = req.params;
+  const { circleId } = req.body;
   // MGOctaviano07Oct2026: circle entries saved before the Invoices module was removed may
   // still carry the retired 'invoices' key — drop it instead of rejecting.
-  const sharedModules = Array.isArray(req.body.sharedModules)
-    ? req.body.sharedModules.filter((k) => k !== 'invoices')
-    : req.body.sharedModules;
-  if (!Array.isArray(sharedModules) || !sharedModules.every((k) => MODULE_KEYS.includes(k))) {
+  const sharedModules = cleanModules(req.body.sharedModules);
+  if (!validModules(sharedModules)) {
     return res.status(400).json({ error: 'sharedModules must be a list of known module keys' });
   }
-  const entry = req.user.circle.find((c) => c.status === 'accepted' && String(c.user) === String(userId));
+  ensureCircles(req.user);
+  const entry = acceptedEntry(req.user, userId);
   if (!entry) return res.status(404).json({ error: 'Not an accepted circle member' });
-  entry.sharedModules = sharedModules;
+
+  // No circleId = the old single-circle call; apply to their first circle.
+  const targetId = circleId || entry.memberships[0]?.circle;
+  const membership = entry.memberships.find((m) => sameId(m.circle, targetId));
+  if (!membership) return res.status(404).json({ error: "That person isn't in that circle" });
+  membership.sharedModules = sharedModules;
+  entry.sharedModules = effectiveModules(entry);
+  await req.user.save();
+  res.json({ ok: true });
+}
+
+// Replaces the list of MY circles one person belongs to. People newly added
+// to a circle start with every module shared, matching how a fresh invite
+// has always behaved; people already in a circle keep their settings. A
+// connected person must stay in at least one circle — to cut them off
+// entirely, remove them from your circle list altogether.
+export async function setMemberCircles(req, res) {
+  const { userId } = req.params;
+  const { circleIds } = req.body;
+  if (!Array.isArray(circleIds) || circleIds.length === 0) {
+    return res.status(400).json({ error: 'Pick at least one circle (or remove the person entirely)' });
+  }
+  ensureCircles(req.user);
+  const entry = acceptedEntry(req.user, userId);
+  if (!entry) return res.status(404).json({ error: 'Not an accepted circle member' });
+  const wanted = [...new Set(circleIds.map(String))];
+  if (!wanted.every((id) => findCircle(req.user, id))) {
+    return res.status(400).json({ error: 'Unknown circle' });
+  }
+
+  const kept = entry.memberships.filter((m) => wanted.includes(String(m.circle)));
+  for (const id of wanted) {
+    if (!kept.some((m) => sameId(m.circle, id))) kept.push({ circle: id, sharedModules: [...MODULE_KEYS] });
+  }
+  entry.memberships = kept;
+  entry.sharedModules = effectiveModules(entry);
   await req.user.save();
   res.json({ ok: true });
 }
@@ -141,23 +246,46 @@ export async function updateSharedModulesForMember(req, res) {
 // --- Circle (personnel management) ---
 
 export async function inviteToCircle(req, res) {
-  const { email } = req.body;
+  const { email, circleId } = req.body;
   const target = await User.findOne({ email: (email || '').toLowerCase() });
   if (!target) return res.status(404).json({ error: 'No account with that email' });
   if (String(target._id) === String(req.user._id)) {
     return res.status(400).json({ error: "That's your own account" });
   }
 
-  const already = req.user.circle.some((c) => String(c.user) === String(target._id));
-  if (!already) {
-    req.user.circle.push({ user: target._id, status: 'pending', invitedBy: req.user._id });
-    await req.user.save();
+  ensureCircles(req.user);
+  ensureCircles(target);
+  const myCircle = (circleId && findCircle(req.user, circleId)) || req.user.circles[0];
+
+  const mine = req.user.circle.find((c) => sameId(c.user, target._id));
+  if (!mine) {
+    req.user.circle.push({
+      user: target._id,
+      status: 'pending',
+      invitedBy: req.user._id,
+      migrated: true,
+      memberships: [{ circle: myCircle._id, sharedModules: [...MODULE_KEYS] }],
+    });
+  } else if (mine.status === 'accepted' && !mine.memberships.some((m) => sameId(m.circle, myCircle._id))) {
+    // Already connected — inviting them again from another circle just adds them to it.
+    mine.memberships.push({ circle: myCircle._id, sharedModules: [...MODULE_KEYS] });
+    mine.sharedModules = effectiveModules(mine);
   }
-  const reciprocal = target.circle.some((c) => String(c.user) === String(req.user._id));
+  await req.user.save();
+
+  // On their side they land in their first circle; they can sort me into
+  // another one afterwards.
+  const reciprocal = target.circle.some((c) => sameId(c.user, req.user._id));
   if (!reciprocal) {
-    target.circle.push({ user: req.user._id, status: 'pending', invitedBy: req.user._id });
-    await target.save();
+    target.circle.push({
+      user: req.user._id,
+      status: 'pending',
+      invitedBy: req.user._id,
+      migrated: true,
+      memberships: [{ circle: target.circles[0]._id, sharedModules: [...MODULE_KEYS] }],
+    });
   }
+  await target.save();
   res.status(201).json({ ok: true });
 }
 
@@ -170,6 +298,7 @@ export async function respondToInvite(req, res) {
   }
 
   if (accept) {
+    ensureCircles(req.user);
     entry.status = 'accepted';
     await req.user.save();
     const other = await User.findById(userId);
@@ -199,22 +328,28 @@ export async function removeFromCircle(req, res) {
 
 // The list the person-switcher dropdown renders: yourself + everyone whose
 // book you're allowed to view (accepted circle members), plus any pending
-// invites so the UI can show "awaiting" state. Also returns `sharing` —
-// your own outgoing per-person settings, for the Circle page's toggles.
+// invites so the UI can show "awaiting" state. Also returns `circles` (your
+// named circles) and `sharing` — your own outgoing per-person, per-circle
+// settings, for the Circle page's toggles.
 export async function listCircle(req, res) {
+  if (ensureCircles(req.user)) await req.user.save();
   await req.user.populate('circle.user', 'name email color avatarSeed');
   const accepted = req.user.circle.filter((c) => c.status === 'accepted' && c.user);
 
   // What each accepted member has shared with ME lives on THEIR circle
   // entry pointing back at me, not on mine — $elemMatch pulls just that
-  // one subdocument per person in a single query.
+  // one subdocument per person in a single query. It's the union across
+  // whichever of THEIR circles I'm in.
   const theirDocs = accepted.length
     ? await User.find(
         { _id: { $in: accepted.map((c) => c.user._id) } },
         { circle: { $elemMatch: { user: req.user._id } } }
       )
     : [];
-  const theirSharedWithMe = new Map(theirDocs.map((u) => [String(u._id), u.circle[0]?.sharedModules || []]));
+  const theirSharedWithMe = new Map(theirDocs.map((u) => [String(u._id), effectiveModules(u.circle[0])]));
+
+  const myCircles = req.user.circles.map((c) => ({ id: c._id, name: c.name }));
+  const circleIdsOf = (entry) => entry.memberships.map((m) => m.circle);
 
   const viewable = [
     { ...req.user.toSafeJSON(), self: true },
@@ -225,16 +360,19 @@ export async function listCircle(req, res) {
       color: c.user.color,
       avatarSeed: c.user.avatarSeed,
       sharedModules: theirSharedWithMe.get(String(c.user._id)) || [],
+      circleIds: circleIdsOf(c),
     })),
   ];
 
   // My own outgoing settings — what I've chosen to let each accepted
-  // member see of my book.
+  // member see of my book, per circle they're in.
   const sharing = accepted.map((c) => ({
     id: c.user._id,
     name: c.user.name,
     email: c.user.email,
-    sharedModules: c.sharedModules,
+    sharedModules: effectiveModules(c), // union, for places that only need "can they see X at all"
+    circleIds: circleIdsOf(c),
+    memberships: c.memberships.map((m) => ({ circleId: m.circle, sharedModules: m.sharedModules })),
   }));
 
   const pendingEntries = req.user.circle.filter((c) => c.status === 'pending' && c.user);
@@ -246,7 +384,7 @@ export async function listCircle(req, res) {
     .map((c) => ({ id: c.user._id, name: c.user.name, email: c.user.email }));
   const outgoing = pendingEntries
     .filter((c) => c.invitedBy && String(c.invitedBy) === String(req.user._id))
-    .map((c) => ({ id: c.user._id, name: c.user.name, email: c.user.email }));
+    .map((c) => ({ id: c.user._id, name: c.user.name, email: c.user.email, circleIds: circleIdsOf(c) }));
 
-  res.json({ viewable, pending, outgoing, sharing });
+  res.json({ circles: myCircles, viewable, pending, outgoing, sharing });
 }

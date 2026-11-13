@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   newItem, toggleItem, updateText, removeItem, addChild, insertAfter, indentItem, outdentItem,
-  countItems, parentIds, ancestorIds,
+  countItems, parentIds, ancestorIds, toggleVerifyBox, verifyStatus,
 } from './checklist.js';
 import { useCollapsed } from '../../hooks/useCollapsed.js';
 
@@ -16,13 +16,41 @@ function FoldBar({ hasParents, allCollapsed, onCollapseAll, onExpandAll }) {
   );
 }
 
+const VERIFY_LABEL = { red: 'Not started', yellow: 'One check done', green: 'Fully verified' };
+
+// The pair of tick boxes shown on every item when a task needs verification.
+function VerifyBoxes({ item, disabled, onToggle }) {
+  const status = verifyStatus(item);
+  return (
+    <span className={`verify-boxes ${status}`} title={VERIFY_LABEL[status]}>
+      <input
+        type="checkbox"
+        checked={!!item.check1}
+        disabled={disabled}
+        onChange={() => onToggle('check1')}
+        aria-label="First check"
+        title="First check"
+      />
+      <input
+        type="checkbox"
+        checked={!!item.check2}
+        disabled={disabled}
+        onChange={() => onToggle('check2')}
+        aria-label="Second check"
+        title="Second check"
+      />
+    </span>
+  );
+}
+
 // Editable nested checklist, used inside the task and instance editors.
 //
 // Keyboard: Enter adds a sibling below, Tab (or → at the end of the text)
 // nests the item under the one above it, Shift+Tab (or ← at the start)
 // moves it back out, Backspace on an empty item
 // removes it. The buttons do the same for anyone not using the keyboard.
-export function ChecklistEditor({ items, onChange }) {
+// With `verify` on, each item shows two tick boxes and a red/yellow/green row.
+export function ChecklistEditor({ items, onChange, verify = false }) {
   const inputs = useRef({});
   const [focusId, setFocusId] = useState(null);
   // Folding in the editor is per-session only (no point remembering it).
@@ -118,7 +146,10 @@ export function ChecklistEditor({ items, onChange }) {
       const isFolded = kids.length > 0 && collapsed.has(item.id);
       return (
       <div key={item.id}>
-        <div className="checklist-edit-row" style={{ paddingLeft: depth * 22 }}>
+        <div
+          className={`checklist-edit-row${verify ? ` verify-row ${verifyStatus(item)}` : ''}`}
+          style={{ paddingLeft: depth * 22 }}
+        >
           {kids.length > 0 ? (
             <button
               type="button"
@@ -132,12 +163,16 @@ export function ChecklistEditor({ items, onChange }) {
           ) : (
             <span className="checklist-caret spacer" />
           )}
-          <input
-            type="checkbox"
-            checked={!!item.done}
-            onChange={() => onChange(toggleItem(items, item.id))}
-            title="Tick"
-          />
+          {verify ? (
+            <VerifyBoxes item={item} onToggle={(key) => onChange(toggleVerifyBox(items, item.id, key))} />
+          ) : (
+            <input
+              type="checkbox"
+              checked={!!item.done}
+              onChange={() => onChange(toggleItem(items, item.id))}
+              title="Tick"
+            />
+          )}
           <input
             ref={(el) => (inputs.current[item.id] = el)}
             className="field sm"
@@ -195,11 +230,12 @@ export function ChecklistEditor({ items, onChange }) {
 }
 
 // Read-mostly nested checklist shown on a task in the list. Ticking a box
-// calls onToggle(id); pass readOnly when the viewer can't edit. Every item
+// calls onToggle(id) — or onToggle(id, 'check1' | 'check2') when `verify` is
+// on and each item has two boxes; pass readOnly when the viewer can't edit. Every item
 // that has sub-items gets a caret to fold it; when folded it shows how many
 // of its hidden sub-items are done. `storageKey` (the task id) makes the
 // folded state stick across reloads.
-export function ChecklistView({ items, onToggle, readOnly, storageKey }) {
+export function ChecklistView({ items, onToggle, readOnly, storageKey, verify = false }) {
   const { collapsed, toggle, setAll } = useCollapsed(storageKey ? `checklist-folded:${storageKey}` : null);
   const parents = parentIds(items);
 
@@ -210,7 +246,10 @@ export function ChecklistView({ items, onToggle, readOnly, storageKey }) {
       const sub = isFolded ? countItems(kids) : null;
       return (
         <div key={item.id}>
-          <div className="checklist-view-row" style={{ paddingLeft: depth * 20 }}>
+          <div
+            className={`checklist-view-row${verify ? ` verify-row ${verifyStatus(item)}` : ''}`}
+            style={{ paddingLeft: depth * 20 }}
+          >
             {kids.length > 0 ? (
               <button
                 type="button"
@@ -224,17 +263,26 @@ export function ChecklistView({ items, onToggle, readOnly, storageKey }) {
             ) : (
               <span className="checklist-caret spacer" />
             )}
-            <label className="checklist-view-label">
-              <input
-                type="checkbox"
-                checked={!!item.done}
-                disabled={readOnly}
-                onChange={() => onToggle(item.id)}
-              />
-              <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--ink3)' : 'var(--ink)' }}>
-                {item.text}
-              </span>
-            </label>
+            {verify ? (
+              <div className="checklist-view-label verify">
+                <VerifyBoxes item={item} disabled={readOnly} onToggle={(key) => onToggle(item.id, key)} />
+                <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--ink3)' : 'var(--ink)' }}>
+                  {item.text}
+                </span>
+              </div>
+            ) : (
+              <label className="checklist-view-label">
+                <input
+                  type="checkbox"
+                  checked={!!item.done}
+                  disabled={readOnly}
+                  onChange={() => onToggle(item.id)}
+                />
+                <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--ink3)' : 'var(--ink)' }}>
+                  {item.text}
+                </span>
+              </label>
+            )}
             {sub && (
               <span
                 className={`checklist-sub-count ${sub.done === sub.total ? 'complete' : ''}`}

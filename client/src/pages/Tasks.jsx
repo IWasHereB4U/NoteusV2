@@ -7,7 +7,7 @@ import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
 import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
 import { ChecklistView } from '../components/tasks/Checklist.jsx';
 import { MacroListView } from '../components/tasks/MacroList.jsx';
-import { cloneFresh, countItems, newItemId, toggleItem } from '../components/tasks/checklist.js';
+import { cloneFresh, countItems, newItemId, toggleItem, toggleVerifyBox } from '../components/tasks/checklist.js';
 import { cloneMacros } from '../utils/formMacros.js';
 import { tasksToText, downloadText, slugify } from '../utils/exportTasks.js';
 
@@ -85,9 +85,11 @@ export function Tasks() {
     return checklistOverrides[t._id] || t.checklist || [];
   }
 
-  async function toggleChecklistItem(t, itemId) {
+  async function toggleChecklistItem(t, itemId, box) {
     if (!viewingSelf) return;
-    const next = toggleItem(checklistOf(t), itemId);
+    const next = t.needsVerification && box
+      ? toggleVerifyBox(checklistOf(t), itemId, box)
+      : toggleItem(checklistOf(t), itemId);
     setChecklistOverrides((o) => ({ ...o, [t._id]: next }));
     try {
       await api.put(`/tasks/${t._id}`, { checklist: next }, viewingId || undefined);
@@ -160,6 +162,7 @@ export function Tasks() {
         link: inst.link || '',
         note: inst.note || '',
         checklist: cloneFresh(inst.checklist),
+        needsVerification: !!inst.needsVerification,
         macros: cloneMacros(inst.macros, newItemId),
         clientId: null,
         priority: 'normal',
@@ -294,7 +297,8 @@ export function Tasks() {
                               items={checklist}
                               readOnly={!viewingSelf}
                               storageKey={t._id}
-                              onToggle={(itemId) => toggleChecklistItem(t, itemId)}
+                              verify={!!t.needsVerification}
+                              onToggle={(itemId, box) => toggleChecklistItem(t, itemId, box)}
                             />
                           )}
                           {macros.length > 0 && <MacroListView macros={macros} />}

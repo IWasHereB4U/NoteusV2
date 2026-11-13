@@ -13,6 +13,10 @@ import {
   respondToInvite,
   removeFromCircle,
   listCircle,
+  createCircle,
+  renameCircle,
+  deleteCircle,
+  setMemberCircles,
 } from '../controllers/authController.js';
 
 const router = Router();
@@ -31,5 +35,11 @@ router.post('/circle/invite', requireAuth, inviteToCircle);
 router.post('/circle/respond', requireAuth, respondToInvite);
 router.delete('/circle/:userId', requireAuth, removeFromCircle);
 router.put('/circle/:userId/shared-modules', requireAuth, updateSharedModulesForMember);
+router.put('/circle/:userId/circles', requireAuth, setMemberCircles);
+
+// Named circles
+router.post('/circles', requireAuth, createCircle);
+router.put('/circles/:circleId', requireAuth, renameCircle);
+router.delete('/circles/:circleId', requireAuth, deleteCircle);
 
 export default router;

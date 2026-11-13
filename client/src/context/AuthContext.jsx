@@ -5,16 +5,22 @@ import { usePolling } from '../hooks/usePolling.js';
 
 const AuthContext = createContext(null);
 
+const EMPTY_CIRCLE = { circles: [], viewable: [], pending: [], outgoing: [], sharing: [] };
+const ACTIVE_CIRCLE_KEY = 'noteus_active_circle';
+const inCircle = (person, circleId) => (person.circleIds || []).some((id) => String(id) === String(circleId));
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
-  const [circle, setCircle] = useState({ viewable: [], pending: [], outgoing: [], sharing: [] });
+  const [circle, setCircle] = useState(EMPTY_CIRCLE);
   const [viewingId, setViewingId] = useState(null); // null = viewing yourself
+  // Which of your named circles the top bar is showing: a circle id, or 'all'.
+  const [activeCircleId, setActiveCircleId] = useState(() => localStorage.getItem(ACTIVE_CIRCLE_KEY) || 'all');
 
   const logout = useCallback(() => {
     localStorage.removeItem('noteus_token');
     setUser(null);
-    setCircle({ viewable: [], pending: [], outgoing: [], sharing: [] });
+    setCircle(EMPTY_CIRCLE);
     setViewingId(null);
   }, []);
 
@@ -99,8 +105,44 @@ export function AuthProvider({ children }) {
   // Sets what one specific circle member can see of your book. No local
   // optimistic state to update here (sharing now lives per-person in
   // `circle.sharing`, not on the account) — just persist and reload.
-  async function updateSharedModulesFor(userId, sharedModules) {
-    await api.put(`/auth/circle/${userId}/shared-modules`, { sharedModules });
+  async function updateSharedModulesFor(userId, circleId, sharedModules) {
+    await api.put(`/auth/circle/${userId}/shared-modules`, { circleId, sharedModules });
+    await loadCircle();
+  }
+
+  // --- Named circles -----------------------------------------------------
+  // Switching circle changes who the top bar lists. If the person you were
+  // viewing isn't in the circle you switch to, drop back to your own book
+  // rather than leaving someone on screen who's no longer in the roster.
+  function selectCircle(id) {
+    setActiveCircleId(id);
+    try { localStorage.setItem(ACTIVE_CIRCLE_KEY, id); } catch { /* not fatal */ }
+    if (viewingId && id !== 'all') {
+      const person = circle.viewable.find((p) => String(p.id) === String(viewingId));
+      if (!person || !inCircle(person, id)) setViewingId(null);
+    }
+  }
+
+  async function createCircle(name) {
+    const created = await api.post('/auth/circles', { name });
+    await loadCircle();
+    return created;
+  }
+
+  async function renameCircle(circleId, name) {
+    await api.put(`/auth/circles/${circleId}`, { name });
+    await loadCircle();
+  }
+
+  async function deleteCircle(circleId) {
+    await api.del(`/auth/circles/${circleId}`);
+    if (String(activeCircleId) === String(circleId)) selectCircle('all');
+    await loadCircle();
+  }
+
+  // Replaces which of YOUR circles one person is in.
+  async function setMemberCircles(userId, circleIds) {
+    await api.put(`/auth/circle/${userId}/circles`, { circleIds });
     await loadCircle();
   }
 
@@ -116,6 +158,13 @@ export function AuthProvider({ children }) {
   // Visible-tab only, every 2 minutes (was 45s, always on).
   usePolling(loadCircle, 120000, !!user);
 
+  // A saved circle that no longer exists (deleted, or another account's)
+  // quietly falls back to showing everyone.
+  const activeIdSafe =
+    activeCircleId === 'all' || circle.circles.some((c) => String(c.id) === String(activeCircleId))
+      ? activeCircleId
+      : 'all';
+
   const value = {
     user,
     booting,
@@ -126,6 +175,12 @@ export function AuthProvider({ children }) {
     updateProfile,
     changePassword,
     updateSharedModulesFor,
+    createCircle,
+    renameCircle,
+    deleteCircle,
+    setMemberCircles,
+    activeCircleId: activeIdSafe,
+    selectCircle,
     circle,
     loadCircle,
     viewingId,

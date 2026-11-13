@@ -4,12 +4,16 @@
 
 const INDENT = '    ';
 
-function checklistLines(items = [], depth = 1) {
+function checklistLines(items = [], depth = 1, verify = false) {
   const lines = [];
   for (const it of items) {
     const text = (it.text || '').trim() || '(empty item)';
-    lines.push(`${INDENT.repeat(depth)}[${it.done ? 'x' : ' '}] ${text}`);
-    lines.push(...checklistLines(it.children || [], depth + 1));
+    // Verification tasks show both boxes, e.g. [x][ ] for "one of two".
+    const box = verify
+      ? `[${it.check1 ? 'x' : ' '}][${it.check2 ? 'x' : ' '}]`
+      : `[${it.done ? 'x' : ' '}]`;
+    lines.push(`${INDENT.repeat(depth)}${box} ${text}`);
+    lines.push(...checklistLines(it.children || [], depth + 1, verify));
   }
   return lines;
 }
@@ -20,7 +24,7 @@ function taskLines(t, checklist) {
   const lines = [`[${t.done ? 'x' : ' '}] ${title}${meta ? `  (${meta})` : ''}`];
   const note = (t.note || '').trim();
   if (note) lines.push(...note.split(/\r?\n/).map((l) => `${INDENT}${l}`.trimEnd()));
-  lines.push(...checklistLines(checklist));
+  lines.push(...checklistLines(checklist, 1, !!t.needsVerification));
   const macros = (t.macros || []).map((m) => (m.name || '').trim()).filter(Boolean);
   if (macros.length) lines.push(`${INDENT}Macros: ${macros.join(', ')}`);
   return lines;

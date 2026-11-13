@@ -15,6 +15,10 @@ const taskSchema = new mongoose.Schema(
     link: { type: String, default: '' },
     note: { type: String, default: '' },
     checklist: { type: Array, default: [] },
+    // When true, every checklist item carries two tick boxes (check1/check2)
+    // and shows red (none) / yellow (one) / green (both). The client owns
+    // the per-item state; the server just stores the flag.
+    needsVerification: { type: Boolean, default: false },
     // Form Macros browser-extension macros: [{ id, name, match, steps }].
     // Built in the extension; kept here so each task carries its own.
     macros: { type: Array, default: [] },

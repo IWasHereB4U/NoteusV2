@@ -11,6 +11,7 @@ const taskInstanceSchema = new mongoose.Schema(
     note: { type: String, default: '' },
     // Nested checklist: [{ id, text, done, children: [...] }]
     checklist: { type: Array, default: [] },
+    needsVerification: { type: Boolean, default: false },
     // Form Macros browser-extension macros: [{ id, name, match, steps }].
     // Built in the extension; kept here so each task carries its own.
     macros: { type: Array, default: [] },

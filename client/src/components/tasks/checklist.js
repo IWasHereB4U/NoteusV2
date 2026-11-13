@@ -9,7 +9,7 @@ export function newItemId() {
 }
 
 export function newItem(text = '') {
-  return { id: newItemId(), text, done: false, children: [] };
+  return { id: newItemId(), text, done: false, check1: false, check2: false, children: [] };
 }
 
 // Deep copy with fresh ids and every box unticked — what a task gets when
@@ -19,6 +19,8 @@ export function cloneFresh(items = []) {
     id: newItemId(),
     text: it.text || '',
     done: false,
+    check1: false,
+    check2: false,
     children: cloneFresh(it.children || []),
   }));
 }
@@ -34,6 +36,63 @@ export function countItems(items = []) {
     done += sub.done;
   }
   return { total, done };
+}
+
+// --- "Needs verification" mode -------------------------------------------
+// A task flagged needsVerification gives every item two boxes (check1 and
+// check2 — e.g. "done" and "verified"). An item is red with none ticked,
+// yellow with one, green with both, and counts as `done` only when both are
+// ticked, so progress counts and the .txt export keep working unchanged.
+
+export function verifyCount(item) {
+  return (item.check1 ? 1 : 0) + (item.check2 ? 1 : 0);
+}
+
+// 'red' | 'yellow' | 'green'
+export function verifyStatus(item) {
+  const n = verifyCount(item);
+  return n === 0 ? 'red' : n === 1 ? 'yellow' : 'green';
+}
+
+function withDone(items) {
+  return items.map((it) => {
+    const children = withDone(it.children || []);
+    return { ...it, children, done: !!(it.check1 && it.check2) };
+  });
+}
+
+function setAllBox(items, key, value) {
+  return items.map((it) => ({ ...it, [key]: value, children: setAllBox(it.children || [], key, value) }));
+}
+
+// Ticks/unticks ONE of an item's two boxes (key = 'check1' | 'check2').
+// Like toggleItem, ticking a box ticks the same box on everything under it,
+// and each parent's box is re-derived from its children (ticked when all of
+// its children's are).
+export function toggleVerifyBox(items, id, key) {
+  const walk = (list) =>
+    list.map((it) => {
+      if (it.id === id) {
+        const value = !it[key];
+        return { ...it, [key]: value, children: setAllBox(it.children || [], key, value) };
+      }
+      const children = walk(it.children || []);
+      const derived = children.length ? children.every((c) => c[key]) : !!it[key];
+      return { ...it, children, [key]: derived };
+    });
+  return withDone(walk(items));
+}
+
+// Switching "needs verification" on/off keeps existing progress sensible:
+// turning it on starts from the current ticks (done items get both boxes),
+// turning it off leaves `done` as it stands.
+export function enableVerification(items = []) {
+  return items.map((it) => ({
+    ...it,
+    check1: !!it.done,
+    check2: !!it.done,
+    children: enableVerification(it.children || []),
+  }));
 }
 
 function setAll(items, done) {
