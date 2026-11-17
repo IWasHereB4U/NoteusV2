@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, resolveViewer, requireOwnWrite, requireModuleShared } from '../middleware/auth.js';
 import { makeCrud } from '../controllers/crudFactory.js';
-import ProjectTimeline, { PHASE_STATUSES } from '../models/ProjectTimeline.js';
+import ProjectTimeline, { PHASE_STATUSES, LEGACY_STATUS } from '../models/ProjectTimeline.js';
 
 // MGOctaviano07Oct2026 — Project Timeline module.
 // Same shape as mapDestinations: gated by the owner's per-person
@@ -13,8 +13,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 // Whitelists the body (so a PUT can't overwrite `owner`) and validates the
-// phases: known status, at most one phase per status, a required start date,
-// well-formed dates, and no deadline/finish before the start.
+// phases: known status (old "Coding Fix"/"UT" names are accepted and renamed),
+// at most one phase per status, a required start date, well-formed dates, no
+// deadline/finish before the start. Phases are stored in pipeline order.
 function cleanBody(req, res, next) {
   const { name, color, notes, phases } = req.body || {};
   const out = {};
@@ -33,7 +34,8 @@ function cleanBody(req, res, next) {
     if (!Array.isArray(phases)) return res.status(400).json({ error: 'phases must be a list' });
     const seen = new Set();
     out.phases = [];
-    for (const p of phases) {
+    for (const raw of phases) {
+      const p = raw && LEGACY_STATUS[raw.status] ? { ...raw, status: LEGACY_STATUS[raw.status] } : raw;
       if (!PHASE_STATUSES.includes(p?.status)) return res.status(400).json({ error: `Status must be one of: ${PHASE_STATUSES.join(', ')}` });
       if (seen.has(p.status)) return res.status(400).json({ error: `Only one "${p.status}" entry per project` });
       seen.add(p.status);
@@ -48,6 +50,7 @@ function cleanBody(req, res, next) {
       }
       out.phases.push(phase);
     }
+    out.phases.sort((a, b) => PHASE_STATUSES.indexOf(a.status) - PHASE_STATUSES.indexOf(b.status));
   }
 
   req.body = out;

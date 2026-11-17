@@ -1,16 +1,23 @@
 // MGOctaviano07Oct2026 — Project Timeline module (replaces Invoices).
 //
-// A project has up to two phases, one per status: "Coding Fix" and "UT".
-// Each phase has three dates: start, deadline, finished.
+// A project moves through a pipeline of eight statuses (see STATUSES below):
+// Functional Specification → Development → Unit Testing → System Integration →
+// UAT Script → User Acceptance Test → UAT Signoff → Deployment.
+// A project has up to one phase per status; each phase has three dates:
+// start, deadline, finished. Pipeline order is the sort order everywhere.
 //
 //   Views    Year  — GitHub-contribution-style grid (weeks as columns)
 //            Month — regular month calendar
 //   Viewing  "All projects" — every project in its own color, so everything
 //            is visible at once; overlapping phases share a cell as stripes.
 //            Pick a single project — only that project is drawn.
-//   Shades   Per project there are two shades of one color: the full color
-//            is Coding Fix, a lighter tint of it is UT (e.g. orange / light
-//            orange).
+//   Colors   "Color by status" (default): every status has its own fixed color,
+//            and the project's color rides along as a left accent.
+//            "Color by project": the project's color is graded from full
+//            (Functional Specification) to lighter tints (Deployment).
+//   Sorting  Phases always run in pipeline order. Projects can be sorted by
+//            name, pipeline stage, next deadline or start date, and the
+//            calendar can be filtered to one or more statuses.
 //   Dates    The three dates are drawn as markers on the calendar
 //            (▶ start, ◎ deadline, ◆ finished), listed in the day panel
 //            and shown on a per-phase track in the project list below.
@@ -22,9 +29,33 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { Modal, ColorPickerField } from '../components/Modal.jsx';
 import { KpiStrip } from '../components/KpiStrip.jsx';
 
-const STATUSES = ['Coding Fix', 'UT'];
-const STATUS_SHORT = { 'Coding Fix': 'CF', UT: 'UT' };
-// First preset is orange on purpose — the default look is orange / light orange.
+// Pipeline order = sort order. Colors are fixed per status and run warm → cool →
+// violet → magenta so neighbouring stages never look alike. `short` is printed
+// on bars so the status never depends on color alone.
+const STATUSES = [
+  { name: 'Functional Specification', short: 'FS',   color: '#64748B' },
+  { name: 'Development',              short: 'DEV',  color: '#F08A24' },
+  { name: 'Unit Testing',             short: 'UT',   color: '#E3B505' },
+  { name: 'System Integration',       short: 'SIT',  color: '#2F9E44' },
+  { name: 'UAT Script',               short: 'UATS', color: '#17A2B8' },
+  { name: 'User Acceptance Test',     short: 'UAT',  color: '#4C6EF5' },
+  { name: 'UAT Signoff',              short: 'SIGN', color: '#9B5DE5' },
+  { name: 'Deployment',               short: 'DEP',  color: '#D6336C' },
+];
+const STATUS_NAMES = STATUSES.map((s) => s.name);
+const STATUS_INFO = Object.fromEntries(STATUSES.map((s, i) => [s.name, { ...s, index: i }]));
+// Rows saved before the pipeline existed still say "Coding Fix" / "UT".
+const LEGACY_STATUS = { 'Coding Fix': 'Development', UT: 'Unit Testing' };
+const canonStatus = (s) => (STATUS_INFO[s] ? s : LEGACY_STATUS[s] || null);
+const SORTS = [
+  { id: 'name', label: 'Name' },
+  { id: 'stage', label: 'Pipeline stage' },
+  { id: 'deadline', label: 'Next deadline' },
+  { id: 'start', label: 'Start date' },
+];
+const NO_DATE = '9999-99-99';
+const TINT_STEP = 0.08; // "Color by project": lighter by this much per pipeline step
+// First preset is orange on purpose — the default look is orange.
 const PRESETS = ['#F08A24', '#0E9C92', '#5B6EE1', '#9B5DE5', '#F1614B', '#1F9D6B', '#E0559B', '#8A6D3B'];
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -79,9 +110,11 @@ function tint(hex, t) {
   const [r, g, b] = hexToRgb(hex);
   return rgbToHex(r + (255 - r) * t, g + (255 - g) * t, b + (255 - b) * t);
 }
-// Coding Fix = the project's color, UT = a lighter shade of the same color.
-function shadeFor(color, status) {
-  return status === 'UT' ? tint(color, 0.55) : color;
+// The fill of a phase. 'status' mode: the status's own color. 'project' mode:
+// the project's color, graded lighter the further along the pipeline it is.
+function fillFor(color, status, mode) {
+  const info = STATUS_INFO[status];
+  return mode === 'project' ? tint(color, info.index * TINT_STEP) : info.color;
 }
 function textOn(hex) {
   const [r, g, b] = hexToRgb(hex);
@@ -93,19 +126,22 @@ function textOn(hex) {
 // One "entry" = one phase of one project — the unit that gets drawn.
 // It spans from its start date to whichever is later of deadline/finished,
 // so a phase that finished late still shows the overrun.
-function buildEntries(projects) {
+// `rank` maps projectId -> position in the chosen project sort; entries come out
+// ordered by that, then by pipeline stage.
+function buildEntries(projects, mode, rank) {
   const out = [];
   projects.forEach((p, pi) => {
     const color = /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : PRESETS[pi % PRESETS.length];
     (p.phases || []).forEach((ph) => {
-      if (!ph.startDate) return;
+      const status = canonStatus(ph.status);
+      if (!status || !ph.startDate) return;
       const end = [ph.deadlineDate, ph.finishedDate].filter(Boolean).reduce((a, b) => (a > b ? a : b), ph.startDate);
-      const shade = shadeFor(color, ph.status);
+      const shade = fillFor(color, status, mode);
       out.push({
-        key: `${p._id}:${ph.status}`,
+        key: `${p._id}:${status}`,
         projectId: p._id,
         name: p.name,
-        status: ph.status,
+        status,
         color,
         shade,
         ink: textOn(shade),
@@ -113,11 +149,43 @@ function buildEntries(projects) {
         deadline: ph.deadlineDate || '',
         finished: ph.finishedDate || '',
         end,
-        order: pi * 2 + (ph.status === 'UT' ? 1 : 0),
+        order: (rank.get(p._id) ?? pi) * 100 + STATUS_INFO[status].index,
       });
     });
   });
   return out.sort((a, b) => a.order - b.order);
+}
+
+// Orders the project list. All keys fall back to name so the order is stable.
+//   stage    furthest-back first: Functional Specification … Deployment, then
+//            fully-finished projects, then projects with no dates
+//   deadline soonest unfinished deadline first
+//   start    earliest start first
+function sortProjects(projects, key) {
+  const facts = new Map(
+    projects.map((p) => {
+      const ph = (p.phases || [])
+        .map((x) => ({ ...x, status: canonStatus(x.status) }))
+        .filter((x) => x.status && x.startDate)
+        .sort((a, b) => STATUS_INFO[a.status].index - STATUS_INFO[b.status].index);
+      const open = ph.find((x) => !x.finishedDate);
+      return [p._id, {
+        stage: ph.length === 0 ? 99 : open ? STATUS_INFO[open.status].index : STATUSES.length,
+        deadline: ph.filter((x) => !x.finishedDate && x.deadlineDate).map((x) => x.deadlineDate).sort()[0] || NO_DATE,
+        start: ph.map((x) => x.startDate).sort()[0] || NO_DATE,
+      }];
+    })
+  );
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+  const cmp = key === 'name'
+    ? byName
+    : (a, b) => {
+        const fa = facts.get(a._id);
+        const fb = facts.get(b._id);
+        const d = key === 'stage' ? fa.stage - fb.stage : fa[key] < fb[key] ? -1 : fa[key] > fb[key] ? 1 : 0;
+        return d || byName(a, b);
+      };
+  return [...projects].sort(cmp);
 }
 
 // date -> { entries: [entry…], marks: [{type, entry}…] }
@@ -188,7 +256,8 @@ function Mark({ type, size = 10, overdue }) {
   );
 }
 
-function Legend({ projectEntriesById, projects, activeId, onPick }) {
+function Legend({ projects, projectEntriesById, activeId, onPick, statusFilter, onToggleStatus, onClearStatus, counts, mode, accent }) {
+  const filtering = statusFilter.size > 0;
   return (
     <div className="pt-legend">
       <div className="pt-legend-group">
@@ -204,22 +273,77 @@ function Legend({ projectEntriesById, projects, activeId, onPick }) {
               title={on ? 'Click to show all projects again' : 'Click to view only this project'}
             >
               <span className="pt-sw" style={{ background: color }} />
-              <span className="pt-sw" style={{ background: tint(color, 0.55) }} />
               {p.name}
               {!projectEntriesById.get(p._id) && <em> · no dates</em>}
             </button>
           );
         })}
       </div>
+
+      <div className="pt-legend-group pt-statuses" role="group" aria-label="Filter by status">
+        <span className="pt-legend-label">Status</span>
+        {STATUSES.map((st, i) => {
+          const on = statusFilter.has(st.name);
+          const swatch = mode === 'project' ? tint(accent, i * TINT_STEP) : st.color;
+          return (
+            <button
+              key={st.name}
+              type="button"
+              className={`pt-schip${on ? ' on' : ''}${filtering && !on ? ' dim' : ''}`}
+              onClick={() => onToggleStatus(st.name)}
+              aria-pressed={on}
+              title={`Stage ${i + 1} of ${STATUSES.length} · click to show only ${st.name}`}
+            >
+              <span className="pt-sw" style={{ background: swatch }} />
+              <span className="pt-schip-n">{i + 1}</span>
+              {st.name}
+              <em>{counts.get(st.name) || 0}</em>
+            </button>
+          );
+        })}
+        {filtering && <button type="button" className="btn ghost sm" onClick={onClearStatus}>Show all statuses</button>}
+      </div>
+
       <div className="pt-legend-group pt-legend-keys">
-        <span><span className="pt-sw big" style={{ background: '#F08A24' }} /> Coding Fix = project color</span>
-        <span><span className="pt-sw big" style={{ background: tint('#F08A24', 0.55) }} /> UT = lighter shade</span>
         <span><span className="pt-sw big pt-hatch" style={{ background: '#F08A24' }} /> Finished after deadline</span>
         {Object.entries(MARKS).map(([t, m]) => (
           <span key={t}><Mark type={t} /> {m.label}</span>
         ))}
         <span><Mark type="deadline" overdue /> Deadline passed, not finished</span>
+        {mode === 'status' && <span><span className="pt-sw big pt-accent" /> Left edge = project color</span>}
       </div>
+    </div>
+  );
+}
+
+// One segment per pipeline stage for a project, so all eight are always visible:
+// done = solid, current = solid + ring, planned = pale, not used = dashed.
+function Pipeline({ entries, todayISO }) {
+  const byStatus = new Map(entries.map((e) => [e.status, e]));
+  const current = entries.find((e) => !e.finished);
+  return (
+    <div className="pt-pipe" role="list" aria-label="Pipeline progress">
+      {STATUSES.map((st) => {
+        const e = byStatus.get(st.name);
+        const kind = !e ? 'none' : e.finished ? 'done' : e === current ? 'cur' : 'todo';
+        const over = e && isOverdue(e, todayISO);
+        const style = e
+          ? kind === 'todo'
+            ? { background: tint(e.shade, 0.72), borderColor: e.shade, color: '#0B1615' }
+            : { background: e.shade, color: e.ink }
+          : undefined;
+        return (
+          <span
+            key={st.name}
+            role="listitem"
+            className={`pt-seg ${kind}${over ? ' over' : ''}`}
+            style={style}
+            title={`${st.name} — ${e ? phaseState(e, todayISO).text : 'not used'}`}
+          >
+            {kind === 'done' ? '✓ ' : ''}{st.short}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -323,10 +447,10 @@ function MonthGrid({ year, month, dayMap, todayISO, selected, onHover, onSelect 
                   <div
                     key={e.key}
                     className={`pt-bar${isLateDay(e, day) ? ' late' : ''}`}
-                    style={{ background: e.shade, color: e.ink }}
+                    style={{ background: e.shade, color: e.ink, borderLeft: `4px solid ${e.color}` }}
                   >
                     {marks.map((m) => <Mark key={m.type} type={m.type} size={10} overdue={m.type === 'deadline' && isOverdue(e, todayISO)} />)}
-                    <span className="pt-bar-t">{e.name} · {STATUS_SHORT[e.status]}</span>
+                    <span className="pt-bar-t">{e.name} · {STATUS_INFO[e.status].short}</span>
                   </div>
                 );
               })}
@@ -399,13 +523,15 @@ function Track({ e, todayISO }) {
 }
 
 function ProjectCard({ project, entries, todayISO, canEdit, onEdit, onDelete }) {
+  const current = entries.find((e) => !e.finished);
+  const now = entries.length === 0 ? '' : current ? `Now: ${current.status}` : 'All phases finished';
   return (
     <div className="pt-pcard">
       <div className="pt-pcard-h">
         <span className="pt-sw big" style={{ background: project.color }} />
-        <span className="pt-sw big" style={{ background: tint(project.color, 0.55) }} />
         <div className="pt-pname">
           <b>{project.name}</b>
+          {now && <span className="pt-now">{now}</span>}
           {project.notes && <span>{project.notes}</span>}
         </div>
         {canEdit && (
@@ -415,8 +541,9 @@ function ProjectCard({ project, entries, todayISO, canEdit, onEdit, onDelete }) 
           </div>
         )}
       </div>
+      {entries.length > 0 && <Pipeline entries={entries} todayISO={todayISO} />}
       {entries.length === 0 ? (
-        <div className="pt-nodates">No dates yet{canEdit ? ' — use Edit to add Coding Fix / UT dates.' : '.'}</div>
+        <div className="pt-nodates">No dates yet{canEdit ? ' — use Edit to add dates for the statuses this project goes through.' : '.'}</div>
       ) : (
         entries.map((e) => {
           const st = phaseState(e, todayISO);
@@ -456,8 +583,8 @@ function ProjectModal({ initial, defaultColor, onSubmit, onClose }) {
   const [notes, setNotes] = useState(initial?.notes || '');
   const [phases, setPhases] = useState(() => {
     const out = {};
-    STATUSES.forEach((s) => {
-      const ph = (initial?.phases || []).find((p) => p.status === s);
+    STATUS_NAMES.forEach((s) => {
+      const ph = (initial?.phases || []).find((p) => canonStatus(p.status) === s);
       out[s] = ph
         ? { startDate: ph.startDate || '', deadlineDate: ph.deadlineDate || '', finishedDate: ph.finishedDate || '' }
         : { ...EMPTY_PHASE };
@@ -473,7 +600,7 @@ function ProjectModal({ initial, defaultColor, onSubmit, onClose }) {
     ev.preventDefault();
     setError('');
     const out = [];
-    for (const s of STATUSES) {
+    for (const s of STATUS_NAMES) {
       const ph = phases[s];
       if (!ph.startDate && !ph.deadlineDate && !ph.finishedDate) continue; // phase left empty = not used
       if (!ph.startDate) return setError(`${s}: a start date is required.`);
@@ -496,7 +623,7 @@ function ProjectModal({ initial, defaultColor, onSubmit, onClose }) {
     <Modal
       title={initial?._id ? 'Edit project' : 'New project'}
       onClose={onClose}
-      width={600}
+      width={760}
       footer={
         <>
           <button className="btn ghost" type="button" onClick={onClose}>Cancel</button>
@@ -511,35 +638,32 @@ function ProjectModal({ initial, defaultColor, onSubmit, onClose }) {
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
         </div>
         <div className="field-row">
-          <label>Color <span style={{ fontWeight: 400, color: 'var(--ink3)' }}>— Coding Fix uses this color, UT uses a lighter shade of it</span></label>
+          <label>Color <span style={{ fontWeight: 400, color: 'var(--ink3)' }}>— the project's accent; "Color by project" shades each status from it</span></label>
           <ColorPickerField value={color} onChange={setColor} presets={PRESETS} />
           <div className="pt-shadeprev">
-            <span className="pt-chip" style={{ background: shadeFor(color, 'Coding Fix'), color: textOn(shadeFor(color, 'Coding Fix')) }}>Coding Fix</span>
-            <span className="pt-chip" style={{ background: shadeFor(color, 'UT'), color: textOn(shadeFor(color, 'UT')) }}>UT</span>
+            {STATUSES.map((st) => {
+              const f = fillFor(color, st.name, 'project');
+              return <span key={st.name} className="pt-chip" style={{ background: f, color: textOn(f) }}>{st.short}</span>;
+            })}
           </div>
         </div>
 
-        {STATUSES.map((s) => (
-          <fieldset key={s} className="pt-fs">
-            <legend>
-              <span className="pt-sw big" style={{ background: shadeFor(color, s) }} /> {s}
-            </legend>
-            <div className="pt-fs-grid">
-              <div className="field-row">
-                <label>Start date</label>
-                <input className="field" type="date" value={phases[s].startDate} onChange={(e) => setPhase(s, 'startDate', e.target.value)} />
-              </div>
-              <div className="field-row">
-                <label>Deadline date</label>
-                <input className="field" type="date" value={phases[s].deadlineDate} onChange={(e) => setPhase(s, 'deadlineDate', e.target.value)} />
-              </div>
-              <div className="field-row">
-                <label>Finished date</label>
-                <input className="field" type="date" value={phases[s].finishedDate} onChange={(e) => setPhase(s, 'finishedDate', e.target.value)} />
-              </div>
+        <div className="pt-prows">
+          <div className="pt-prow pt-prow-h">
+            <span>Status (pipeline order)</span><span>Start</span><span>Deadline</span><span>Finished</span>
+          </div>
+          {STATUSES.map((st, i) => (
+            <div key={st.name} className="pt-prow">
+              <span className="pt-plabel">
+                <span className="pt-sw big" style={{ background: st.color }} />
+                <b>{i + 1}. {st.name}</b>
+              </span>
+              <label className="pt-pcell"><span className="pt-pcell-l">Start</span><input className="field" type="date" aria-label={`${st.name} start date`} value={phases[st.name].startDate} onChange={(e) => setPhase(st.name, 'startDate', e.target.value)} /></label>
+              <label className="pt-pcell"><span className="pt-pcell-l">Deadline</span><input className="field" type="date" aria-label={`${st.name} deadline date`} value={phases[st.name].deadlineDate} onChange={(e) => setPhase(st.name, 'deadlineDate', e.target.value)} /></label>
+              <label className="pt-pcell"><span className="pt-pcell-l">Finished</span><input className="field" type="date" aria-label={`${st.name} finished date`} value={phases[st.name].finishedDate} onChange={(e) => setPhase(st.name, 'finishedDate', e.target.value)} /></label>
             </div>
-          </fieldset>
-        ))}
+          ))}
+        </div>
         <div className="pt-hint">Leave a status's dates empty if the project doesn't have that phase.</div>
 
         <div className="field-row" style={{ marginTop: 12 }}>
@@ -565,20 +689,46 @@ export function ProjectTimeline() {
   const [hover, setHover] = useState(null);
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [colorMode, setColorMode] = useState('status'); // 'status' | 'project'
+  const [sortKey, setSortKey] = useState('name');
+  const [statusFilter, setStatusFilter] = useState(() => new Set()); // empty = every status
 
   // A deleted project (or a switch of whose book is on screen) falls back to "all".
   const activeId = pick !== 'all' && projects.some((p) => p._id === pick) ? pick : 'all';
+  const sortedProjects = useMemo(() => sortProjects(projects, sortKey), [projects, sortKey]);
   const visibleProjects = useMemo(
-    () => (activeId === 'all' ? projects : projects.filter((p) => p._id === activeId)),
-    [projects, activeId]
+    () => (activeId === 'all' ? sortedProjects : sortedProjects.filter((p) => p._id === activeId)),
+    [sortedProjects, activeId]
   );
   // Entries for the whole book are built once so a project keeps the same
   // color no matter which view is active.
-  const allEntries = useMemo(() => buildEntries(projects), [projects]);
-  const entries = useMemo(
+  const allEntries = useMemo(() => {
+    const rank = new Map(sortedProjects.map((p, i) => [p._id, i]));
+    return buildEntries(projects, colorMode, rank);
+  }, [projects, sortedProjects, colorMode]);
+  const projectEntries = useMemo(
     () => (activeId === 'all' ? allEntries : allEntries.filter((e) => e.projectId === activeId)),
     [allEntries, activeId]
   );
+  // What the calendar draws: the chosen project(s), narrowed to the chosen statuses.
+  const entries = useMemo(
+    () => (statusFilter.size === 0 ? projectEntries : projectEntries.filter((e) => statusFilter.has(e.status))),
+    [projectEntries, statusFilter]
+  );
+  const statusCounts = useMemo(() => {
+    const m = new Map();
+    projectEntries.forEach((e) => m.set(e.status, (m.get(e.status) || 0) + 1));
+    return m;
+  }, [projectEntries]);
+  const accent = (activeId !== 'all' && projects.find((p) => p._id === activeId)?.color) || '#0B1615';
+
+  function toggleStatus(name) {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
   const dayMap = useMemo(() => buildDayMap(entries), [entries]);
   const entriesByProject = useMemo(() => {
     const m = new Map();
@@ -657,6 +807,17 @@ export function ProjectTimeline() {
                   {projects.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
                 </select>
               </label>
+              <label className="pt-viewsel">
+                <span>Sort</span>
+                <select className="field" value={sortKey} onChange={(e) => setSortKey(e.target.value)} title="Order of projects in the calendar stack and the list below. Phases always run in pipeline order.">
+                  {SORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+              </label>
+              <div className="pt-viewsel" role="group" aria-label="Color by">
+                <span>Color by</span>
+                <button className={`btn sm ${colorMode === 'status' ? '' : 'ghost'}`} onClick={() => setColorMode('status')}>Status</button>
+                <button className={`btn sm ${colorMode === 'project' ? '' : 'ghost'}`} onClick={() => setColorMode('project')}>Project</button>
+              </div>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button className={`btn sm ${scale === 'month' ? '' : 'ghost'}`} onClick={() => setScale('month')}>Month</button>
                 <button className={`btn sm ${scale === 'year' ? '' : 'ghost'}`} onClick={() => setScale('year')}>Year</button>
@@ -670,12 +831,23 @@ export function ProjectTimeline() {
             <div className="card">
               <div className="empty">
                 <b>No projects yet</b>
-                {viewingSelf ? 'Add a project with its Coding Fix and UT dates to see it on the timeline.' : 'Nothing has been added here yet.'}
+                {viewingSelf ? 'Add a project with its phase dates (Functional Specification through Deployment) to see it on the timeline.' : 'Nothing has been added here yet.'}
               </div>
             </div>
           ) : (
             <>
-              <Legend projectEntriesById={entriesByProject} projects={projects} activeId={activeId} onPick={setPick} />
+              <Legend
+                projects={sortedProjects}
+                projectEntriesById={entriesByProject}
+                activeId={activeId}
+                onPick={setPick}
+                statusFilter={statusFilter}
+                onToggleStatus={toggleStatus}
+                onClearStatus={() => setStatusFilter(new Set())}
+                counts={statusCounts}
+                mode={colorMode}
+                accent={accent}
+              />
 
               {scale === 'year' ? (
                 <div className="card pt-yearcard">
