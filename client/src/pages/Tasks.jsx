@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { useResource } from '../hooks/useResource.js';
 import { useCollapsed } from '../hooks/useCollapsed.js';
@@ -10,6 +10,7 @@ import { MacroListView } from '../components/tasks/MacroList.jsx';
 import { cloneFresh, countItems, newItemId, toggleItem, toggleVerifyBox } from '../components/tasks/checklist.js';
 import { cloneMacros } from '../utils/formMacros.js';
 import { tasksToText, downloadText, slugify } from '../utils/exportTasks.js';
+import { parseTasksText, planImport } from '../utils/importTasks.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
@@ -33,6 +34,8 @@ export function Tasks() {
   const { viewingSelf } = useAuth();
   const [editing, setEditing] = useState(null);
   const [showInstances, setShowInstances] = useState(false);
+  const importRef = useRef(null);
+  const [importing, setImporting] = useState(false);
   const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
   const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist/macros open
   // Client groups folded away (remembered between visits).
@@ -134,6 +137,45 @@ export function Tasks() {
     downloadText(`task-${slugify(t.title)}-${new Date().toISOString().slice(0, 10)}.txt`, text);
   }
 
+  // Reads a .txt made by Export (whole list or one task). A task whose title
+  // matches an existing one overwrites it; every other task is added.
+  async function importTxt(ev) {
+    const file = ev.target.files?.[0];
+    ev.target.value = ''; // lets the same file be picked again later
+    if (!file || !viewingSelf) return;
+    let done = 0;
+    try {
+      const parsed = parseTasksText(await file.text());
+      const plan = planImport(parsed, items, clients);
+      const total = plan.creates.length + plan.updates.length;
+      if (!total) {
+        alert('No tasks found in that file. Import reads the .txt files made by "Export .txt" / "Export".');
+        return;
+      }
+      const shown = plan.updates.slice(0, 8).map((u) => `  • ${u.title}`);
+      if (plan.updates.length > 8) shown.push(`  …and ${plan.updates.length - 8} more`);
+      const msg = [
+        `Import ${total} task${total === 1 ? '' : 's'} from ${file.name}?`,
+        '',
+        `${plan.creates.length} new`,
+        `${plan.updates.length} will OVERWRITE the existing task with the same title`,
+        ...(shown.length ? ['', ...shown] : []),
+        ...(plan.updates.length ? ['', 'Overwriting replaces title, done, priority, due date, note, checklist and client. Link and macros are kept.'] : []),
+        ...(plan.unmatchedClients.length ? ['', `No client named: ${plan.unmatchedClients.join(', ')} (new tasks go to General; overwritten ones keep their client).`] : []),
+        ...(plan.skipped ? ['', `${plan.skipped} untitled task${plan.skipped === 1 ? '' : 's'} skipped.`] : []),
+      ].join('\n');
+      if (!confirm(msg)) return;
+      setImporting(true);
+      for (const u of plan.updates) { await api.put(`/tasks/${u.id}`, u.payload, viewingId || undefined); done += 1; }
+      for (const c of plan.creates) { await api.post('/tasks', c.payload, viewingId || undefined); done += 1; }
+    } catch (err) {
+      alert(`Import stopped after ${done} task${done === 1 ? '' : 's'}: ${err.message || 'something went wrong'}`);
+    } finally {
+      setImporting(false);
+      await reload();
+    }
+  }
+
   // --- Task instances -------------------------------------------------
   async function createInstance(values) {
     await api.post('/task-instances', values, viewingId || undefined);
@@ -182,6 +224,14 @@ export function Tasks() {
             <button className="btn ghost" onClick={exportTxt} title="Download the whole list, with checklists, as a .txt file">
               Export .txt
             </button>
+          )}
+          {viewingSelf && (
+            <>
+              <button className="btn ghost" onClick={() => importRef.current?.click()} disabled={importing} title="Load tasks from a .txt made by Export. A task with the same title overwrites the existing one.">
+                {importing ? 'Importing…' : 'Import .txt'}
+              </button>
+              <input ref={importRef} type="file" accept=".txt,text/plain" onChange={importTxt} style={{ display: 'none' }} />
+            </>
           )}
           <button className="btn ghost" onClick={() => setShowInstances(true)}>
             Task instances{instances.length ? ` (${instances.length})` : ''}

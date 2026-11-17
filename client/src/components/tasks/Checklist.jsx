@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   newItem, toggleItem, updateText, removeItem, addChild, insertAfter, indentItem, outdentItem,
-  countItems, parentIds, ancestorIds, toggleVerifyBox, verifyStatus,
+  countItems, parentIds, ancestorIds, toggleVerifyBox, verifyStatus, wrapInParent,
 } from './checklist.js';
 import { useCollapsed } from '../../hooks/useCollapsed.js';
 
@@ -85,6 +85,15 @@ export function ChecklistEditor({ items, onChange, verify = false }) {
   function addSub(parentId) {
     const it = newItem();
     const next = addChild(items, parentId, it);
+    onChange(next);
+    reveal(next, it.id);
+    setFocusId(it.id);
+  }
+
+  // Adds a new item in this item's place and moves this item under it.
+  function addParent(id) {
+    const it = newItem();
+    const next = wrapInParent(items, id, it);
     onChange(next);
     reveal(next, it.id);
     setFocusId(it.id);
@@ -186,6 +195,9 @@ export function ChecklistEditor({ items, onChange, verify = false }) {
               {(() => { const c = countItems(kids); return `${c.done}/${c.total}`; })()}
             </span>
           )}
+          <button type="button" className="btn ghost sm" onClick={() => addParent(item.id)} title="Add a new item above this one that becomes its parent (this item moves under it)">
+            + Parent
+          </button>
           <button type="button" className="btn ghost sm" onClick={() => addSub(item.id)} title="Add a sub-item under this one">
             + Sub
           </button>
@@ -222,7 +234,7 @@ export function ChecklistEditor({ items, onChange, verify = false }) {
       </button>
       {items.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
-          Enter = new item · Tab or → (at end of text) = nest under the one above · Shift+Tab or ← (at start) = move out
+          Enter = new item · Tab or → (at end of text) = nest under the one above · Shift+Tab or ← (at start) = move out · + Parent = wrap in a new parent
         </div>
       )}
     </div>

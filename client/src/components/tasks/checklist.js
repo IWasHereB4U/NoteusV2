@@ -136,6 +136,17 @@ export function addChild(items, parentId, item) {
   );
 }
 
+// "+ Parent": puts `parent` in the spot where item `id` is now, and moves that
+// item (with everything under it) inside it as its only child. The new parent
+// starts out ticked exactly like the item it wraps, so no progress changes.
+export function wrapInParent(items, id, parent) {
+  return items.map((it) =>
+    it.id === id
+      ? { ...parent, done: !!it.done, check1: !!it.check1, check2: !!it.check2, children: [it] }
+      : { ...it, children: wrapInParent(it.children || [], id, parent) }
+  );
+}
+
 // Inserts `item` right after the sibling with id `afterId`, at whatever
 // depth that sibling lives.
 export function insertAfter(items, afterId, item) {
