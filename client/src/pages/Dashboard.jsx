@@ -7,9 +7,13 @@ function fm(n) {
   return '₱' + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 });
 }
 
+const HIDDEN = '₱ ••••••';
+
 export function Dashboard() {
   const { viewingId, viewingSelf, user } = useAuth();
   const [data, setData] = useState(null);
+  // Money figures start hidden; the person can reveal them with the toggle.
+  const [showMoney, setShowMoney] = useState(false);
 
   useEffect(() => {
     const va = viewingId || undefined;
@@ -42,13 +46,21 @@ export function Dashboard() {
           <div className="eyebrow">Overview</div>
           <h1>{viewingSelf ? `Hi, ${user?.name?.split(' ')[0]}` : 'Overview'}</h1>
         </div>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => setShowMoney((v) => !v)}
+          aria-pressed={showMoney}
+        >
+          {showMoney ? 'Hide amounts' : 'Show amounts'}
+        </button>
       </div>
 
       <KpiStrip
         items={[
-          { label: 'Income', value: fm(income), cls: 'in' },
-          { label: 'Expenses', value: fm(expense), cls: 'out' },
-          { label: 'Net', value: fm(income - expense) },
+          { label: 'Income', value: showMoney ? fm(income) : HIDDEN, cls: 'in' },
+          { label: 'Expenses', value: showMoney ? fm(expense) : HIDDEN, cls: 'out' },
+          { label: 'Net', value: showMoney ? fm(income - expense) : HIDDEN },
           { label: 'Open tasks', value: openTasks, cls: 'info' },
         ]}
       />
