@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 // server agree on the same fixed list without importing across the
 // client/server boundary.
 // MGOctaviano07Oct2026: 'invoices' replaced by 'projecttimeline'.
-export const MODULE_KEYS = ['clients', 'money', 'bankbook', 'projecttimeline', 'tasks', 'meetings', 'timesheet', 'calendar', 'filing', 'notes', 'notetags', 'maps', 'poi', 'calorie'];
+export const MODULE_KEYS = ['clients', 'money', 'bankbook', 'projecttimeline', 'tasks', 'meetings', 'timesheet', 'calendar', 'filing', 'notes', 'notetags', 'maps', 'poi', 'calorie', 'files'];
 
 const userSchema = new mongoose.Schema(
   {

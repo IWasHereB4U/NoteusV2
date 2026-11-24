@@ -6,6 +6,20 @@ import { Modal, ColorPickerField } from '../components/Modal.jsx';
 import { PlaceField } from '../components/maps/PlaceField.jsx';
 import { RouteMap } from '../components/maps/RouteMap.jsx';
 import { osrmRoute, shortLabel, fmtDistance, fmtDuration } from '../api/geo.js';
+import { googleMapsUrl, googleDirectionsUrl, fmtCoords } from '../utils/mapInput.js';
+
+// Google Maps travel mode for a card's transport mode.
+const TRAVEL_MODE = { Walk: 'walking', Bike: 'bicycling', Jeepney: 'transit', Bus: 'transit', 'UV Express': 'transit', Train: 'transit', Ferry: 'transit' };
+const travelMode = (mode) => TRAVEL_MODE[mode] || 'driving';
+
+// A place name that opens the spot in Google Maps; hovering shows the coordinates.
+function PlaceLink({ place }) {
+  return (
+    <a className="loc-link" href={googleMapsUrl(place)} target="_blank" rel="noopener noreferrer" title={`${place.label}\n${fmtCoords(place)}`}>
+      {shortLabel(place.label)}
+    </a>
+  );
+}
 
 const MODES = [
   ['Walk', '🚶'], ['Jeepney', '🚐'], ['Bus', '🚌'], ['UV Express', '🚐'], ['Tricycle', '🛺'],
@@ -353,12 +367,17 @@ export function Destination() {
               <div className="card">
                 <div className="card-h">
                   <h2>{shortLabel(dest.from.label)} → {shortLabel(dest.to.label)}</h2>
-                  {viewingSelf && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn ghost sm" onClick={() => setModal({ type: 'dest', dest })}>Edit</button>
-                      <button className="btn danger sm" onClick={() => removeDestination(dest)}>Remove</button>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <a className="btn ghost sm" href={googleDirectionsUrl(dest.from, dest.to)} target="_blank" rel="noopener noreferrer" title="Open this trip in Google Maps">
+                      Open in Google Maps ↗
+                    </a>
+                    {viewingSelf && (
+                      <>
+                        <button className="btn ghost sm" onClick={() => setModal({ type: 'dest', dest })}>Edit</button>
+                        <button className="btn danger sm" onClick={() => removeDestination(dest)}>Remove</button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <RouteMap from={dest.from} to={dest.to} routes={routes} legs={legs} activeId={activeRoute} />
                 <div className="map-note">
@@ -420,12 +439,15 @@ export function Destination() {
                                     <div className="tcard-name">{c.name || '—'}</div>
                                     <div className="tcard-price">{peso(c.price)}</div>
                                     <dl className="tcard-dl">
-                                      <dt>From</dt><dd title={c.from.label}>{shortLabel(c.from.label)}</dd>
-                                      <dt>To</dt><dd title={c.to.label}>{shortLabel(c.to.label)}</dd>
+                                      <dt>From</dt><dd><PlaceLink place={c.from} /></dd>
+                                      <dt>To</dt><dd><PlaceLink place={c.to} /></dd>
                                       <dt>Updated</dt><dd>{fmtDate(c.updatedOn)}</dd>
                                       {leg?.coords && (<><dt>Road</dt><dd>{fmtDistance(leg.distance)} · ~{fmtDuration(leg.duration)}</dd></>)}
                                       {leg?.error && (<><dt>Road</dt><dd className="tcard-err">{leg.error}</dd></>)}
                                     </dl>
+                                    <div className="tcard-actions">
+                                      <a className="btn ghost sm" href={googleDirectionsUrl(c.from, c.to, travelMode(c.mode))} target="_blank" rel="noopener noreferrer" title="Open this leg in Google Maps">Directions ↗</a>
+                                    </div>
                                     {viewingSelf && (
                                       <div className="tcard-actions">
                                         <button className="btn ghost sm" onClick={() => setModal({ type: 'card', route: r, card: c })}>Edit</button>

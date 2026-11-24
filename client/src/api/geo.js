@@ -10,6 +10,9 @@
 //   VITE_NOMINATIM_URL=https://nominatim.example.com
 //   VITE_OSRM_URL=https://osrm.example.com
 //   VITE_NOMINATIM_COUNTRY=ph      (optional — comma-separated ISO codes)
+import { api } from './client.js';
+import { parseCoordinates, parseMapInput } from '../utils/mapInput.js';
+
 const NOMINATIM = (import.meta.env.VITE_NOMINATIM_URL || 'https://nominatim.openstreetmap.org').replace(/\/$/, '');
 const OSRM = (import.meta.env.VITE_OSRM_URL || 'https://router.project-osrm.org').replace(/\/$/, '');
 const COUNTRY = import.meta.env.VITE_NOMINATIM_COUNTRY || '';
@@ -94,11 +97,49 @@ export async function reversePlace(lat, lon, signal) {
   return data?.display_name || null;
 }
 
-// "14.5995, 120.9842" (or "lat lon") typed straight into a place box.
+// Coordinates typed straight into a place box: "14.5995, 120.9842",
+// "14.5995° N, 120.9842° E", degrees/minutes/seconds, ...
 export function parseCoords(text) {
-  const m = String(text).trim().match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)$/);
-  if (!m) return null;
-  const lat = Number(m[1]);
-  const lon = Number(m[2]);
-  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null;
+  const c = parseCoordinates(text);
+  return c ? { lat: c.lat, lon: c.lon } : null;
+}
+
+// Anything pasted into a place box that is a location rather than a search:
+// coordinates or a map link (Google Maps, OpenStreetMap, Apple, Bing, Waze,
+// geo:). Resolves to
+//   { kind: 'place', place: { label, lat, lon } }   a spot, ready to use
+//   { kind: 'search', query }                       a link that only names a place
+//   null                                            plain text — search it normally
+// and throws a readable Error for a link that can't be understood.
+export async function resolvePlaceInput(text, signal) {
+  let parsed = parseMapInput(text);
+  if (!parsed) return null;
+
+  if (parsed.kind === 'short') {
+    // Short links hide the location behind a redirect the browser can't follow,
+    // so the server expands them.
+    let expanded;
+    try {
+      expanded = (await api.get(`/geo/resolve?url=${encodeURIComponent(parsed.url)}`)).url;
+    } catch (err) {
+      throw new Error(err.message || "Couldn't open that link — paste the full link or the coordinates instead");
+    }
+    parsed = parseMapInput(expanded);
+    if (!parsed || parsed.kind === 'short') {
+      throw new Error("That link doesn't contain a location — open it in Maps and copy the full address bar link, or paste the coordinates");
+    }
+  }
+
+  if (parsed.kind === 'search') return parsed;
+
+  const { lat, lon } = parsed;
+  let label = parsed.label;
+  if (!label) {
+    try {
+      label = await reversePlace(lat, lon, signal);
+    } catch {
+      /* fall back to the coordinates */
+    }
+  }
+  return { kind: 'place', place: { label: label || `Pinned location (${lat.toFixed(5)}, ${lon.toFixed(5)})`, lat, lon } };
 }

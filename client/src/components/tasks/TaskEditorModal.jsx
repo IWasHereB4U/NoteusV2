@@ -1,9 +1,12 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Modal } from '../Modal.jsx';
 import { ChecklistEditor } from './Checklist.jsx';
 import { MacroListEditor } from './MacroList.jsx';
 import { cloneFresh, enableVerification, newItemId, normalizeLink, pruneEmpty } from './checklist.js';
 import { cloneMacros } from '../../utils/formMacros.js';
+import { filesApi, toAttachment } from '../../api/files.js';
+import { AttachmentList } from './AttachmentList.jsx';
+import { FilePickerModal } from '../files/FilePickerModal.jsx';
 
 // One editor for both a Task and a Task Instance — they share name, link,
 // note and the nested checklist. mode="task" adds the task-only fields
@@ -24,7 +27,12 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
     due: initial.due || '',
     priority: initial.priority || 'normal',
     fromInstance: initial.fromInstance || null,
+    attachments: initial.attachments || [],
   });
+  const picRef = useRef(null);
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [picking, setPicking] = useState(null); // null | 'any' | 'image'
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -37,6 +45,28 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
       // Turning it on: items already ticked start with both boxes ticked.
       checklist: on ? enableVerification(s.checklist) : s.checklist,
     }));
+  }
+
+  // Each picked file goes straight into the file repository, then onto the
+  // task. (Cancelling the editor afterwards leaves the file in the repository.)
+  async function uploadFiles(fileList) {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    setUploading(true);
+    setError('');
+    const added = [];
+    try {
+      for (const f of files) added.push(toAttachment(await filesApi.upload(f)));
+    } catch (err) {
+      setError(`${err.message || 'Upload failed'}${added.length ? ` (${added.length} of ${files.length} attached)` : ''}`);
+    } finally {
+      if (added.length) setValues((s) => ({ ...s, attachments: [...s.attachments, ...added] }));
+      setUploading(false);
+    }
+  }
+
+  function attachFromRepo(repoFiles) {
+    setValues((s) => ({ ...s, attachments: [...s.attachments, ...repoFiles.map(toAttachment)] }));
   }
 
   function startFrom(instanceId) {
@@ -76,6 +106,7 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
               due: values.due,
               priority: values.priority,
               fromInstance: values.fromInstance,
+              attachments: values.attachments,
             }
           : { ...common, name: values.name.trim() }
       );
@@ -161,6 +192,27 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
           </div>
         )}
 
+        {isTask && (
+          <div className="field-row">
+            <label>Pictures &amp; files</label>
+            <div className="attach-actions">
+              <button type="button" className="btn ghost sm" disabled={uploading} onClick={() => picRef.current?.click()}>🖼️ Add picture</button>
+              <button type="button" className="btn ghost sm" disabled={uploading} onClick={() => fileRef.current?.click()}>📎 Add file</button>
+              <button type="button" className="btn ghost sm" disabled={uploading} onClick={() => setPicking('any')}>🗂️ From repository</button>
+              {uploading && <span className="attach-status">Uploading…</span>}
+            </div>
+            <input ref={picRef} type="file" accept="image/*" multiple hidden onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+            <input ref={fileRef} type="file" multiple hidden onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }} />
+            <AttachmentList
+              items={values.attachments}
+              onRemove={(a) => setValues((s) => ({ ...s, attachments: s.attachments.filter((x) => x.id !== a.id) }))}
+            />
+            {values.attachments.length === 0 && !uploading && (
+              <small style={{ color: 'var(--ink3)', fontSize: 11.5 }}>Files are kept in the File repository, up to 50 MB each.</small>
+            )}
+          </div>
+        )}
+
         <div className="field-row">
           <label>Checklist</label>
           <label htmlFor={fid('verify')} className="verify-option">
@@ -187,6 +239,14 @@ export function TaskEditorModal({ mode, initial = {}, clients = [], instances = 
           <MacroListEditor macros={values.macros} onChange={(v) => set('macros', v)} />
         </div>
       </form>
+      {picking && (
+        <FilePickerModal
+          imagesOnly={picking === 'image'}
+          excludeIds={values.attachments.map((a) => a.fileId)}
+          onPick={attachFromRepo}
+          onClose={() => setPicking(null)}
+        />
+      )}
     </Modal>
   );
 }

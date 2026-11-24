@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Modal } from '../Modal.jsx';
-import { searchPlaces, reversePlace } from '../../api/geo.js';
+import { searchPlaces, reversePlace, resolvePlaceInput } from '../../api/geo.js';
 
 const DEFAULT_CENTER = [14.6, 121.0];
 
@@ -92,7 +92,18 @@ export function MapPickerModal({ initial, onPick, onClose }) {
     setSearching(true);
     setError('');
     try {
-      setResults(await searchPlaces(q));
+      // Coordinates or a map link drop the pin right there.
+      const direct = await resolvePlaceInput(q);
+      if (direct?.kind === 'place') {
+        const { lat, lon, label: found } = direct.place;
+        if (!labelEdited.current) setLabel(found);
+        map.current.setView([lat, lon], 17);
+        await place(lat, lon);
+        if (!labelEdited.current) setLabel(found);
+        setResults(null);
+        return;
+      }
+      setResults(await searchPlaces(direct?.kind === 'search' ? direct.query : q));
     } catch (err) {
       setError(err.message || 'Search failed');
     } finally {
@@ -135,7 +146,7 @@ export function MapPickerModal({ initial, onPick, onClose }) {
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
         <input
           className="field"
-          placeholder="Search to jump the map nearby (optional)…"
+          placeholder="Search, or paste coordinates / a map link…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } }}

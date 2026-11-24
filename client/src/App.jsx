@@ -23,6 +23,7 @@ import { Notes } from './pages/Notes.jsx';
 import { NoteTags } from './pages/NoteTags.jsx';
 import { Destination } from './pages/Destination.jsx';
 import { Poi } from './pages/Poi.jsx';
+import { Files } from './pages/Files.jsx';
 import { Converter } from './pages/Converter.jsx';
 import { Documentasheion } from './pages/Documentasheion.jsx';
 
@@ -49,6 +50,7 @@ export default function App() {
             {/* MGOctaviano07Oct2026: /invoices route removed */}
             <Route path="/project-timeline" element={<ProjectTimeline />} />
             <Route path="/tasks" element={<Tasks />} />
+            <Route path="/files" element={<Files />} />
             <Route path="/meetings" element={<Meetings />} />
             <Route path="/timesheet" element={<Timesheet />} />
             <Route path="/calendar" element={<Calendar />} />

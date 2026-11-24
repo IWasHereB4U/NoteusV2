@@ -14,6 +14,7 @@ export const NAV_ITEMS = [
   // MGOctaviano07Oct2026: Invoices removed, Project Timeline added.
   { to: '/project-timeline', label: 'Project Timeline', icon: '▬', key: 'projecttimeline', group: 'work' },
   { to: '/tasks', label: 'Tasks', icon: '☑', key: 'tasks', group: 'work' },
+  { to: '/files', label: 'File repository', icon: '❐', key: 'files', group: 'work' },
   { to: '/meetings', label: 'Meetings', icon: '◷', key: 'meetings', group: 'work' },
   { to: '/timesheet', label: 'Timesheet', icon: '▥', key: 'timesheet', group: 'work' },
   { to: '/calendar', label: 'Calendar', icon: '▧', key: 'calendar', group: 'plan' },

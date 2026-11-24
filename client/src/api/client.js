@@ -44,7 +44,28 @@ async function request(path, { method = 'GET', body, viewAs } = {}) {
   return data;
 }
 
+// Multipart upload (the JSON request() above can't carry a file).
+async function upload(path, file, viewAs) {
+  const url = new URL(BASE + path, window.location.origin);
+  if (viewAs) url.searchParams.set('viewAs', viewAs);
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new Error('Session expired');
+  }
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data;
+}
+
 export const api = {
+  upload,
   get: (path, viewAs) => request(path, { viewAs }),
   post: (path, body, viewAs) => request(path, { method: 'POST', body, viewAs }),
   put: (path, body, viewAs) => request(path, { method: 'PUT', body, viewAs }),

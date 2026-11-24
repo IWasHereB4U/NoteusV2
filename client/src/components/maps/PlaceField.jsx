@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { searchPlaces, parseCoords } from '../../api/geo.js';
+import { searchPlaces, resolvePlaceInput } from '../../api/geo.js';
+import { fmtCoords, googleMapsUrl } from '../../utils/mapInput.js';
 import { MapPickerModal } from './MapPickerModal.jsx';
 
 // Pick a place by searching OpenStreetMap (Nominatim). `value` is
 // {label, lat, lon} or null. Search runs on Enter / the Search button —
 // not on every keystroke — to stay within Nominatim's 1 req/sec policy.
-export function PlaceField({ value, onChange, placeholder = 'Search a place…' }) {
+export function PlaceField({ value, onChange, placeholder = 'Search a place, or paste coordinates / a map link…' }) {
   const [text, setText] = useState(value?.label || '');
   const [results, setResults] = useState(null); // null = nothing searched yet
   const [busy, setBusy] = useState(false);
@@ -21,25 +22,41 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  async function run() {
-    if (!text.trim()) return;
-    // Typed coordinates ("14.5995, 120.9842") are used as-is.
-    const c = parseCoords(text);
-    if (c) {
-      pick({ label: `Pinned location (${c.lat}, ${c.lon})`, ...c });
-      return;
-    }
+  // `input` is passed when the text was just pasted (state hasn't updated yet).
+  async function run(input = text) {
+    const query = String(input).trim();
+    if (!query) return;
     abort.current?.abort();
     abort.current = new AbortController();
+    const { signal } = abort.current;
     setBusy(true);
     setError('');
     try {
-      setResults(await searchPlaces(text, abort.current.signal));
+      // Coordinates and map links (Google Maps etc.) are used directly;
+      // anything else is a normal place search.
+      const direct = await resolvePlaceInput(query, signal);
+      if (direct?.kind === 'place') {
+        pick(direct.place);
+        return;
+      }
+      const term = direct?.kind === 'search' ? direct.query : query;
+      if (direct?.kind === 'search') setText(term);
+      setResults(await searchPlaces(term, signal));
     } catch (err) {
       if (err.name !== 'AbortError') setError(err.message || 'Search failed');
     } finally {
       setBusy(false);
     }
+  }
+
+  // Pasting a map link or coordinates picks the spot straight away.
+  function onPaste(e) {
+    const pasted = e.clipboardData?.getData('text') || '';
+    if (!pasted.trim() || !/^(\s*[-+\d(]|\s*lat|\s*[NSEW]\s*\d|\s*geo:|\s*(https?:\/\/|[\w-]+\.[\w.-]+\/))/i.test(pasted)) return;
+    e.preventDefault();
+    setText(pasted.trim());
+    if (value) onChange(null);
+    run(pasted);
   }
 
   function pick(p) {
@@ -59,6 +76,7 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
             setText(e.target.value);
             if (value) onChange(null); // typing again invalidates the pick
           }}
+          onPaste={onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -67,7 +85,7 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
           }}
           style={{ flex: 1, minWidth: 0 }}
         />
-        <button type="button" className="btn ghost sm" onClick={run} disabled={busy || !text.trim()}>
+        <button type="button" className="btn ghost sm" onClick={() => run()} disabled={busy || !text.trim()}>
           {busy ? '…' : 'Search'}
         </button>
         <button type="button" className="btn ghost sm" onClick={() => setPicking(true)} title="Can't find it? Drop a pin on the map">
@@ -75,7 +93,13 @@ export function PlaceField({ value, onChange, placeholder = 'Search a place…' 
         </button>
       </div>
       {value && (
-        <div className="place-ok">✓ {value.lat.toFixed(4)}, {value.lon.toFixed(4)}</div>
+        <div className="place-ok">
+          ✓ {value.lat.toFixed(4)}, {value.lon.toFixed(4)}
+          {' · '}
+          <a href={googleMapsUrl(value)} target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+          {' · '}
+          <button type="button" className="linkish" onClick={() => navigator.clipboard?.writeText(fmtCoords(value))} title="Copy the coordinates">Copy coordinates</button>
+        </div>
       )}
       {error && <div className="place-err">{error}</div>}
       {results && (

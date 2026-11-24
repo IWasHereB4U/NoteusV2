@@ -22,6 +22,14 @@ const taskSchema = new mongoose.Schema(
     // Form Macros browser-extension macros: [{ id, name, match, steps }].
     // Built in the extension; kept here so each task carries its own.
     macros: { type: Array, default: [] },
+    // Pictures and files on the task: [{ id, fileId, name, url, mimeType, kind,
+    // size }]. `fileId` points at the File repository entry; name/url/size are
+    // copied so the task list can render without a second lookup. Deleting
+    // the file from the repository removes it from here too.
+    attachments: { type: Array, default: [] },
+    // Position when the list is sorted by hand (drag and drop). Lower = higher
+    // up. Unset = never placed by hand, so it sorts after placed tasks.
+    order: { type: Number, default: null },
     // The Task Instance this task was created from, if any. Informational
     // only — the task is a full independent copy, so editing either one
     // never touches the other.

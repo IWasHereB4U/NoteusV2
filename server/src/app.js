@@ -15,6 +15,11 @@ import noteFolderRoutes from './routes/noteFolders.js';
 import noteCardRoutes from './routes/noteCards.js';
 import recurringRuleRoutes from './routes/recurringRules.js';
 import mediaRoutes, { UPLOAD_DIR } from './routes/media.js';
+import fileRoutes from './routes/files.js';
+import taskExtraRoutes from './routes/taskExtras.js';
+import geoRoutes from './routes/geo.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 import Client from './models/Client.js';
 import Transaction from './models/Transaction.js';
@@ -54,7 +59,25 @@ const app = express();
 // second function invocation for nearly every real request.
 app.use(cors({ origin: resolveCorsOrigin(), maxAge: 86400 }));
 app.use(express.json({ limit: '2mb' }));
-app.use('/uploads', express.static(UPLOAD_DIR));
+// Download with the file's real name: /uploads/<stored-name>/<original-name>.
+// (The stored name is random, and the browser ignores <a download> across
+// origins, so the name has to come from the server.)
+app.get('/uploads/:stored/:name', (req, res, next) => {
+  const stored = path.basename(req.params.stored);
+  if (stored !== req.params.stored || !fs.existsSync(path.join(UPLOAD_DIR, stored))) return next();
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.download(path.join(UPLOAD_DIR, stored), req.params.name);
+});
+// Only plain media and PDFs may render inline. Anything else (html, svg, js,
+// office files...) is sent as a download so an uploaded page can't run
+// scripts on the API's origin.
+const INLINE_OK = /\.(png|jpe?g|gif|webp|mp4|webm|ogv|ogg|mov|mp3|wav|m4a|pdf)$/i;
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders(res, filePath) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (!INLINE_OK.test(filePath)) res.setHeader('Content-Disposition', 'attachment');
+  },
+}));
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -62,6 +85,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/clients', resourceRouter(Client, { moduleKey: 'clients' }));
 app.use('/api/transactions', resourceRouter(Transaction, { sortBy: '-date', moduleKey: 'money' }));
+app.use('/api/tasks', taskExtraRoutes); // reorder + verify, before the generic /:id routes
 app.use('/api/tasks', resourceRouter(Task, { sortBy: 'due', moduleKey: 'tasks' }));
 app.use('/api/task-instances', resourceRouter(TaskInstance, { sortBy: 'name', moduleKey: 'tasks' }));
 app.use('/api/note-tags', noteTagRoutes); // tag delete also untags words
@@ -79,6 +103,8 @@ app.use('/api/note-folders', noteFolderRoutes);
 app.use('/api/note-cards', noteCardRoutes);
 app.use('/api/recurring-rules', recurringRuleRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/geo', geoRoutes);
 app.use('/api/map-destinations', mapDestinationRoutes);
 app.use('/api/pois', poiRoutes);
 app.use('/api/banks', banksRouter);

@@ -12,24 +12,41 @@ const HIDDEN = '₱ ••••••';
 export function Dashboard() {
   const { viewingId, viewingSelf, user } = useAuth();
   const [data, setData] = useState(null);
-  // Money figures start hidden; the person can reveal them with the toggle.
+  // Money stays hidden — and isn't even downloaded — until the person taps
+  // "Show amounts". It hides again whenever the dashboard is reopened or the
+  // person-switcher changes whose book is on screen.
   const [showMoney, setShowMoney] = useState(false);
+  const [tx, setTx] = useState(null); // null = not loaded yet
+  const [txError, setTxError] = useState(false);
 
   useEffect(() => {
     const va = viewingId || undefined;
+    setShowMoney(false);
+    setTx(null);
+    setTxError(false);
     Promise.all([
-      api.get('/transactions', va),
-      api.get('/tasks', va),
+      api.get('/tasks', va).catch(() => []),
       // MGOctaviano07Oct2026: was /invoices. Tolerate a 403 (module not shared) so the dashboard still loads.
       api.get('/project-timelines', va).catch(() => []),
-      api.get('/filings', va),
-    ]).then(([tx, tasks, projects, filings]) => setData({ tx, tasks, projects, filings }));
+      api.get('/filings', va).catch(() => []),
+    ]).then(([tasks, projects, filings]) => setData({ tasks, projects, filings }));
   }, [viewingId]);
+
+  // Fetch the transactions only the first time they are asked to be shown.
+  useEffect(() => {
+    if (!showMoney || tx !== null) return;
+    api.get('/transactions', viewingId || undefined)
+      .then(setTx)
+      .catch(() => { setTx([]); setTxError(true); });
+  }, [showMoney, tx, viewingId]);
 
   if (!data) return <main className="page">Loading…</main>;
 
-  const income = data.tx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expense = data.tx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const txList = tx || [];
+  const income = txList.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expense = txList.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const moneyShown = showMoney && tx !== null && !txError;
+  const moneyText = (v) => (showMoney && tx === null ? '₱ …' : moneyShown ? fm(v) : HIDDEN);
   const openTasks = data.tasks.filter((t) => !t.done).length;
   // MGOctaviano07Oct2026: replaces the invoices summary. A project is "open" until every phase has a finished date.
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -58,12 +75,16 @@ export function Dashboard() {
 
       <KpiStrip
         items={[
-          { label: 'Income', value: showMoney ? fm(income) : HIDDEN, cls: 'in' },
-          { label: 'Expenses', value: showMoney ? fm(expense) : HIDDEN, cls: 'out' },
-          { label: 'Net', value: showMoney ? fm(income - expense) : HIDDEN },
+          { label: 'Income', value: moneyText(income), cls: 'in' },
+          { label: 'Expenses', value: moneyText(expense), cls: 'out' },
+          { label: 'Net', value: moneyText(income - expense) },
           { label: 'Open tasks', value: openTasks, cls: 'info' },
         ]}
       />
+
+      {showMoney && txError && (
+        <div className="auth-error">Couldn't load the amounts{viewingSelf ? '' : " — this person may not share Money with you"}.</div>
+      )}
 
       <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="card">

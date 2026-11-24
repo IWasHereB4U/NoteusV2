@@ -8,6 +8,7 @@ import { PlaceField } from '../components/maps/PlaceField.jsx';
 import { PoiMap } from '../components/maps/PoiMap.jsx';
 import { MediaLibrary } from '../components/notes/MediaLibrary.jsx';
 import { shortLabel } from '../api/geo.js';
+import { googleMapsUrl, fmtCoords } from '../utils/mapInput.js';
 import { WEEKDAYS, describeSchedule, scheduleStatus } from '../utils/poiSchedule.js';
 
 const DEFAULT_COLOR = '#0E9C92';
@@ -506,7 +507,17 @@ export function Poi() {
                   )}
                   {selected.description && <p className="poi-desc">{selected.description}</p>}
                   <dl className="tcard-dl">
-                    <dt>Where</dt><dd style={{ whiteSpace: 'normal' }}>{selected.place.label}</dd>
+                    <dt>Where</dt>
+                    <dd style={{ whiteSpace: 'normal' }}>
+                      {selected.place.label}
+                      <div className="loc-line">
+                        <a className="loc-link" href={googleMapsUrl(selected.place)} target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+                        {' · '}
+                        <button type="button" className="loc-copy" onClick={() => navigator.clipboard?.writeText(fmtCoords(selected.place))} title="Copy the coordinates">
+                          {fmtCoords(selected.place)} ⧉
+                        </button>
+                      </div>
+                    </dd>
                     {selected.schedule?.mode !== 'none' && (
                       <>
                         <dt>{selected.schedule?.mode === 'once' ? 'Dates' : 'Hours'}</dt>

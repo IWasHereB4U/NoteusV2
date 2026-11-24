@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { TaskEditorModal } from '../components/tasks/TaskEditorModal.jsx';
 import { TaskInstancesModal } from '../components/tasks/TaskInstancesModal.jsx';
 import { ChecklistView } from '../components/tasks/Checklist.jsx';
+import { AttachmentList } from '../components/tasks/AttachmentList.jsx';
 import { MacroListView } from '../components/tasks/MacroList.jsx';
 import { cloneFresh, countItems, newItemId, toggleItem, toggleVerifyBox } from '../components/tasks/checklist.js';
 import { cloneMacros } from '../utils/formMacros.js';
@@ -14,7 +15,29 @@ import { parseTasksText, planImport } from '../utils/importTasks.js';
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
+// Hand-sorted: tasks the person has placed (drag and drop) come first, in that
+// order; anything never placed follows, by deadline.
+function cmpManual(a, b) {
+  const ah = a.order != null;
+  const bh = b.order != null;
+  if (ah && bh) return a.order - b.order || cmpDue(a, b);
+  if (ah) return -1;
+  if (bh) return 1;
+  return cmpDue(a, b) || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+}
+
+const SORT_KEY = 'tasks-sort-mode';
+const readSortMode = () => {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    return v === 'priority' || v === 'manual' ? v : 'due';
+  } catch {
+    return 'due';
+  }
+};
+
 function sorters(mode) {
+  if (mode === 'manual') return cmpManual;
   if (mode === 'priority') {
     return (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || cmpDue(a, b);
   }
@@ -31,12 +54,21 @@ export function Tasks() {
   const { items, reload, viewingId } = useResource('/tasks');
   const { items: clients } = useResource('/clients');
   const { items: instances, reload: reloadInstances } = useResource('/task-instances');
-  const { viewingSelf } = useAuth();
+  const { viewingSelf, user } = useAuth();
   const [editing, setEditing] = useState(null);
   const [showInstances, setShowInstances] = useState(false);
   const importRef = useRef(null);
   const [importing, setImporting] = useState(false);
-  const [sortMode, setSortMode] = useState('due'); // 'due' | 'priority'
+  const [sortMode, setSortModeState] = useState(readSortMode); // 'due' | 'priority' | 'manual'
+  const setSortMode = (m) => {
+    setSortModeState(m);
+    try { localStorage.setItem(SORT_KEY, m); } catch { /* not fatal */ }
+  };
+  // Drag-and-drop: which task is being dragged, and the line showing where it will land.
+  const [drag, setDrag] = useState(null); // { id, group }
+  const [dropAt, setDropAt] = useState(null); // { id, pos: 'before' | 'after' }
+  // A new order shows instantly; the saved copy replaces it on reload.
+  const [orderOverrides, setOrderOverrides] = useState({});
   const [expanded, setExpanded] = useState(() => new Set()); // task ids with checklist/macros open
   // Client groups folded away (remembered between visits).
   const { collapsed: foldedGroups, toggle: toggleGroup, remove: unfoldGroups } = useCollapsed('tasks-folded-groups');
@@ -52,6 +84,11 @@ export function Tasks() {
       byClient.get(key).push(t);
     }
     const sorter = sorters(sortMode);
+    for (const [, tasks] of byClient) {
+      tasks.forEach((t, i) => {
+        if (orderOverrides[t._id] !== undefined) tasks[i] = { ...t, order: orderOverrides[t._id] };
+      });
+    }
     const groupList = [...byClient.entries()].map(([key, tasks]) => ({
       key,
       label: key === '__general' ? 'General (no client)' : clientName[key] || 'Unknown client',
@@ -64,7 +101,7 @@ export function Tasks() {
       return a.label.localeCompare(b.label);
     });
     return groupList;
-  }, [items, clients, sortMode]);
+  }, [items, clients, sortMode, orderOverrides]);
 
   async function save(payload) {
     if (editing?._id) await api.put(`/tasks/${editing._id}`, payload, viewingId || undefined);
@@ -89,9 +126,21 @@ export function Tasks() {
   }
 
   async function toggleChecklistItem(t, itemId, box) {
-    if (!viewingSelf) return;
+    if (!viewingSelf) {
+      // Someone else's task: the only thing allowed is the second box of a
+      // "needs verification" checklist. The server enforces it too.
+      if (!(t.needsVerification && box === 'check2')) return;
+      try {
+        await api.put(`/tasks/${t._id}/verify`, { itemId }, viewingId || undefined);
+      } catch (err) {
+        alert(err.message || "Couldn't update that box");
+      }
+      await reload();
+      return;
+    }
+    const by = { id: user?.id, name: user?.name, at: new Date().toISOString() };
     const next = t.needsVerification && box
-      ? toggleVerifyBox(checklistOf(t), itemId, box)
+      ? toggleVerifyBox(checklistOf(t), itemId, box, by)
       : toggleItem(checklistOf(t), itemId);
     setChecklistOverrides((o) => ({ ...o, [t._id]: next }));
     try {
@@ -100,6 +149,51 @@ export function Tasks() {
     } finally {
       setChecklistOverrides(({ [t._id]: _, ...rest }) => rest);
     }
+  }
+
+  // Saves a new top-to-bottom order for one group's tasks and switches the list
+  // to manual sorting so the order is what's shown.
+  async function applyOrder(ids) {
+    if (!viewingSelf) return;
+    setSortMode('manual');
+    setOrderOverrides((o) => ({ ...o, ...Object.fromEntries(ids.map((id, i) => [id, i])) }));
+    try {
+      await api.put('/tasks/reorder', { ids }, viewingId || undefined);
+      await reload();
+    } catch (err) {
+      alert(err.message || "Couldn't save the new order");
+    } finally {
+      setOrderOverrides((o) => {
+        const rest = { ...o };
+        ids.forEach((id) => delete rest[id]);
+        return rest;
+      });
+    }
+  }
+
+  function moveTo(group, dragId, targetId, pos) {
+    if (dragId === targetId) return;
+    const ids = group.tasks.map((x) => x._id).filter((id) => id !== dragId);
+    const at = ids.indexOf(targetId);
+    if (at === -1) return;
+    ids.splice(pos === 'after' ? at + 1 : at, 0, dragId);
+    applyOrder(ids);
+  }
+
+  // ▲ / ▼ — the same reorder without a mouse (and for touch screens, where
+  // dragging a row isn't available).
+  function nudge(group, id, delta) {
+    const ids = group.tasks.map((x) => x._id);
+    const i = ids.indexOf(id);
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    applyOrder(ids);
+  }
+
+  function endDrag() {
+    setDrag(null);
+    setDropAt(null);
   }
 
   function toggleExpanded(id) {
@@ -127,7 +221,7 @@ export function Tasks() {
   }
 
   function exportTxt() {
-    const text = tasksToText(groups, checklistOf, { sortLabel: sortMode === 'priority' ? 'priority' : 'deadline' });
+    const text = tasksToText(groups, checklistOf, { sortLabel: sortMode === 'priority' ? 'priority' : sortMode === 'manual' ? 'manual order' : 'deadline' });
     downloadText(`tasks-${new Date().toISOString().slice(0, 10)}.txt`, text);
   }
 
@@ -244,6 +338,12 @@ export function Tasks() {
         <span style={{ fontSize: 12.5, color: 'var(--ink3)', fontWeight: 600 }}>Sort by</span>
         <button className={`btn sm ${sortMode === 'due' ? '' : 'ghost'}`} onClick={() => setSortMode('due')}>Deadline</button>
         <button className={`btn sm ${sortMode === 'priority' ? '' : 'ghost'}`} onClick={() => setSortMode('priority')}>Priority</button>
+        <button className={`btn sm ${sortMode === 'manual' ? '' : 'ghost'}`} onClick={() => setSortMode('manual')} title="Your own order — drag a task by its ⋮⋮ handle">Manual</button>
+        {viewingSelf && (
+          <span style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+            {sortMode === 'manual' ? 'Drag ⋮⋮ or use ▲▼ to reorder' : 'Drag ⋮⋮ to sort by hand'}
+          </span>
+        )}
         {items.length > 0 && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <button className="btn ghost sm" onClick={expandAll} disabled={allOpen && foldedGroups.size === 0} title="Open every group and every task's checklist">
@@ -282,9 +382,46 @@ export function Tasks() {
                   const { total, done } = countItems(checklist);
                   const macros = t.macros || [];
                   const isOpen = expanded.has(t._id);
+                  const isDropTarget = dropAt?.id === t._id && drag?.group === g.key;
                   return (
-                    <div key={t._id}>
-                      <div className="row" style={{ gridTemplateColumns: '24px 1fr auto auto' }}>
+                    <div
+                      key={t._id}
+                      className={`task-wrap${drag?.id === t._id ? ' dragging' : ''}${isDropTarget ? ` drop-${dropAt.pos}` : ''}`}
+                      onDragOver={(e) => {
+                        if (!drag || drag.group !== g.key) return; // only reorder inside the same group
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        const r = e.currentTarget.getBoundingClientRect();
+                        const pos = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
+                        if (dropAt?.id !== t._id || dropAt.pos !== pos) setDropAt({ id: t._id, pos });
+                      }}
+                      onDrop={(e) => {
+                        if (!drag || drag.group !== g.key) return;
+                        e.preventDefault();
+                        const pos = dropAt?.id === t._id ? dropAt.pos : 'before';
+                        moveTo(g, drag.id, t._id, pos);
+                        endDrag();
+                      }}
+                    >
+                      <div className="row" style={{ gridTemplateColumns: viewingSelf ? '16px 24px 1fr auto auto' : '24px 1fr auto auto' }}>
+                        {viewingSelf && (
+                          <span
+                            className="drag-handle"
+                            draggable
+                            title="Drag to move this task up or down"
+                            aria-label={`Drag ${t.title} to reorder`}
+                            onDragStart={(e) => {
+                              const wrap = e.currentTarget.closest('.task-wrap');
+                              if (wrap) e.dataTransfer.setDragImage(wrap, 12, 12);
+                              e.dataTransfer.effectAllowed = 'move';
+                              e.dataTransfer.setData('text/plain', t._id);
+                              setDrag({ id: t._id, group: g.key });
+                            }}
+                            onDragEnd={endDrag}
+                          >
+                            ⋮⋮
+                          </span>
+                        )}
                         <input type="checkbox" checked={t.done} disabled={!viewingSelf} onChange={() => toggle(t)} />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -324,11 +461,18 @@ export function Tasks() {
                             )}
                           </div>
                           {t.note && <div className="task-note">{t.note}</div>}
+                          <AttachmentList items={t.attachments} />
                         </div>
                         <span className={`tag ${t.priority === 'high' ? 'rose' : t.priority === 'low' ? 'green' : 'ochre'}`}>
                           {t.priority}{t.due ? ` · ${t.due}` : ''}
                         </span>
                         <div style={{ display: 'flex', gap: 6 }}>
+                          {viewingSelf && sortMode === 'manual' && (
+                            <>
+                              <button className="btn ghost sm" onClick={() => nudge(g, t._id, -1)} disabled={g.tasks[0]?._id === t._id} title="Move up" aria-label="Move up">▲</button>
+                              <button className="btn ghost sm" onClick={() => nudge(g, t._id, 1)} disabled={g.tasks[g.tasks.length - 1]?._id === t._id} title="Move down" aria-label="Move down">▼</button>
+                            </>
+                          )}
                           <button className="btn ghost sm" onClick={() => exportOne(t, g.label)} title="Download just this task as a .txt file">
                             Export
                           </button>
@@ -341,11 +485,12 @@ export function Tasks() {
                         </div>
                       </div>
                       {isOpen && (total > 0 || macros.length > 0) && (
-                        <div style={{ padding: '0 18px 12px 54px' }}>
+                        <div style={{ padding: viewingSelf ? '0 18px 12px 70px' : '0 18px 12px 54px' }}>
                           {total > 0 && (
                             <ChecklistView
                               items={checklist}
                               readOnly={!viewingSelf}
+                              canVerify={!viewingSelf && !!t.needsVerification}
                               storageKey={t._id}
                               verify={!!t.needsVerification}
                               onToggle={(itemId, box) => toggleChecklistItem(t, itemId, box)}

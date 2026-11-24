@@ -20,6 +20,7 @@ const MODULES = [
   ['maps', 'Destination'], // key stays `maps` so existing sharing settings still apply
   ['poi', 'Point of Interest'],
   ['calorie', 'Calorie'],
+  ['files', 'File repository'],
 ];
 
 const same = (a, b) => String(a) === String(b);

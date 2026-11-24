@@ -61,24 +61,46 @@ function withDone(items) {
   });
 }
 
-function setAllBox(items, key, value) {
-  return items.map((it) => ({ ...it, [key]: value, children: setAllBox(it.children || [], key, value) }));
+// `by` ({ id, name, at }) records who ticked the second box, so the list can
+// show who verified each item. Only check2 is stamped; ticking it on a parent
+// stamps only the items that weren't already ticked (their original stamp
+// stays), and unticking clears the stamp.
+function setAllBox(items, key, value, by) {
+  return items.map((it) => {
+    const next = { ...it, [key]: value, children: setAllBox(it.children || [], key, value, by) };
+    if (key === 'check2') {
+      if (!value) delete next.check2By;
+      else if (!it.check2 && by) next.check2By = by;
+    }
+    return next;
+  });
 }
 
 // Ticks/unticks ONE of an item's two boxes (key = 'check1' | 'check2').
 // Like toggleItem, ticking a box ticks the same box on everything under it,
 // and each parent's box is re-derived from its children (ticked when all of
 // its children's are).
-export function toggleVerifyBox(items, id, key) {
+export function toggleVerifyBox(items, id, key, by) {
+  const stamp = key === 'check2';
   const walk = (list) =>
     list.map((it) => {
       if (it.id === id) {
         const value = !it[key];
-        return { ...it, [key]: value, children: setAllBox(it.children || [], key, value) };
+        const next = { ...it, [key]: value, children: setAllBox(it.children || [], key, value, by) };
+        if (stamp) {
+          if (!value) delete next.check2By;
+          else if (by) next.check2By = by;
+        }
+        return next;
       }
       const children = walk(it.children || []);
       const derived = children.length ? children.every((c) => c[key]) : !!it[key];
-      return { ...it, children, [key]: derived };
+      const next = { ...it, children, [key]: derived };
+      if (stamp) {
+        if (!derived) delete next.check2By;
+        else if (!it.check2 && by) next.check2By = by;
+      }
+      return next;
     });
   return withDone(walk(items));
 }

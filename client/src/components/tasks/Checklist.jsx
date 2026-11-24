@@ -4,6 +4,7 @@ import {
   countItems, parentIds, ancestorIds, toggleVerifyBox, verifyStatus, wrapInParent,
 } from './checklist.js';
 import { useCollapsed } from '../../hooks/useCollapsed.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 function FoldBar({ hasParents, allCollapsed, onCollapseAll, onExpandAll }) {
   if (!hasParents) return null;
@@ -19,14 +20,19 @@ function FoldBar({ hasParents, allCollapsed, onCollapseAll, onExpandAll }) {
 const VERIFY_LABEL = { red: 'Not started', yellow: 'One check done', green: 'Fully verified' };
 
 // The pair of tick boxes shown on every item when a task needs verification.
-function VerifyBoxes({ item, disabled, onToggle }) {
+// `disabled` locks both boxes. `lockFirst` locks only the first one — used when
+// someone else in the circle is looking at the owner's task: they may tick the
+// second box (to confirm), but never the owner's first one.
+function VerifyBoxes({ item, disabled, lockFirst, onToggle }) {
   const status = verifyStatus(item);
+  const by = item.check2By;
+  const secondTitle = item.check2 && by?.name ? `Verified by ${by.name}` : 'Second check';
   return (
     <span className={`verify-boxes ${status}`} title={VERIFY_LABEL[status]}>
       <input
         type="checkbox"
         checked={!!item.check1}
-        disabled={disabled}
+        disabled={disabled || lockFirst}
         onChange={() => onToggle('check1')}
         aria-label="First check"
         title="First check"
@@ -37,7 +43,7 @@ function VerifyBoxes({ item, disabled, onToggle }) {
         disabled={disabled}
         onChange={() => onToggle('check2')}
         aria-label="Second check"
-        title="Second check"
+        title={secondTitle}
       />
     </span>
   );
@@ -52,6 +58,9 @@ function VerifyBoxes({ item, disabled, onToggle }) {
 // With `verify` on, each item shows two tick boxes and a red/yellow/green row.
 export function ChecklistEditor({ items, onChange, verify = false }) {
   const inputs = useRef({});
+  const { user } = useAuth();
+  // Who is ticking the second box (recorded on the item as "verified by").
+  const whoTicked = () => ({ id: user?.id, name: user?.name, at: new Date().toISOString() });
   const [focusId, setFocusId] = useState(null);
   // Folding in the editor is per-session only (no point remembering it).
   const { collapsed, toggle: toggleFold, setAll: setFolded, remove: unfold } = useCollapsed(null);
@@ -173,7 +182,7 @@ export function ChecklistEditor({ items, onChange, verify = false }) {
             <span className="checklist-caret spacer" />
           )}
           {verify ? (
-            <VerifyBoxes item={item} onToggle={(key) => onChange(toggleVerifyBox(items, item.id, key))} />
+            <VerifyBoxes item={item} onToggle={(key) => onChange(toggleVerifyBox(items, item.id, key, whoTicked()))} />
           ) : (
             <input
               type="checkbox"
@@ -247,7 +256,7 @@ export function ChecklistEditor({ items, onChange, verify = false }) {
 // that has sub-items gets a caret to fold it; when folded it shows how many
 // of its hidden sub-items are done. `storageKey` (the task id) makes the
 // folded state stick across reloads.
-export function ChecklistView({ items, onToggle, readOnly, storageKey, verify = false }) {
+export function ChecklistView({ items, onToggle, readOnly, storageKey, verify = false, canVerify = false }) {
   const { collapsed, toggle, setAll } = useCollapsed(storageKey ? `checklist-folded:${storageKey}` : null);
   const parents = parentIds(items);
 
@@ -277,10 +286,20 @@ export function ChecklistView({ items, onToggle, readOnly, storageKey, verify = 
             )}
             {verify ? (
               <div className="checklist-view-label verify">
-                <VerifyBoxes item={item} disabled={readOnly} onToggle={(key) => onToggle(item.id, key)} />
+                <VerifyBoxes
+                  item={item}
+                  disabled={readOnly && !canVerify}
+                  lockFirst={readOnly}
+                  onToggle={(key) => onToggle(item.id, key)}
+                />
                 <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? 'var(--ink3)' : 'var(--ink)' }}>
                   {item.text}
                 </span>
+                {item.check2 && item.check2By?.name && (
+                  <span className="verify-by" title={item.check2By.at ? new Date(item.check2By.at).toLocaleString() : ''}>
+                    ✓ {item.check2By.name}
+                  </span>
+                )}
               </div>
             ) : (
               <label className="checklist-view-label">
