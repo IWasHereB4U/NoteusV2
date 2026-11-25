@@ -256,29 +256,120 @@ function Mark({ type, size = 10, overdue }) {
   );
 }
 
+// Compact replacement for the old wall of project chips: one header line that
+// scales to any number of projects. Search narrows the list, the list scrolls
+// inside a fixed height, and picking a project focuses the calendar on it.
+function ProjectPicker({ projects, entriesById, activeId, onPick }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const active = projects.find((p) => p._id === activeId);
+  const rows = useMemo(() => {
+    const todayISO = iso(new Date());
+    return projects.map((p, pi) => {
+      const entries = entriesById.get(p._id) || [];
+      const color = entries[0]?.color || (/^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : PRESETS[pi % PRESETS.length]);
+      const current = entries.find((e) => !e.finished);
+      const over = !!current && isOverdue(current, todayISO);
+      return { p, color, entries, current, over };
+    });
+  }, [projects, entriesById]);
+  const shown = needle ? rows.filter((r) => (r.p.name || '').toLowerCase().includes(needle)) : rows;
+  const activeRow = rows.find((r) => r.p._id === activeId);
+
+  function pick(id) {
+    onPick(id);
+    setOpen(false);
+    setQ('');
+  }
+  function onKey(ev) {
+    if (ev.key === 'Escape') { setOpen(false); setQ(''); }
+    else if (ev.key === 'Enter' && shown.length > 0) { ev.preventDefault(); pick(shown[0].p._id); }
+  }
+
+  return (
+    <div className="pt-picker">
+      <div className="pt-picker-bar">
+        <button
+          type="button"
+          className="pt-picker-toggle"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <span className="pt-legend-label">Projects</span>
+          <span className="pt-picker-count">{projects.length}</span>
+          <span className={`pt-picker-caret${open ? ' open' : ''}`} aria-hidden="true">▾</span>
+        </button>
+        <input
+          className="field pt-picker-search"
+          type="search"
+          placeholder="Search projects…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKey}
+          aria-label="Search projects"
+        />
+        {active ? (
+          <span className="pt-picker-active">
+            <span className="pt-sw" style={{ background: activeRow?.color }} />
+            <span className="pt-picker-active-n">{active.name}</span>
+            <button type="button" onClick={() => onPick('all')} aria-label="Show all projects" title="Show all projects again">✕</button>
+          </span>
+        ) : (
+          <span className="pt-picker-all">Showing all projects</span>
+        )}
+      </div>
+
+      {open && (
+        <div className="pt-picker-panel" role="listbox" aria-label="Projects">
+          {!needle && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={activeId === 'all'}
+              className={`pt-prow-btn all${activeId === 'all' ? ' on' : ''}`}
+              onClick={() => pick('all')}
+            >
+              <span className="pt-picker-all-dot" />
+              <span className="pt-prow-name">All projects</span>
+              <span className="pt-prow-stage idle">{projects.length}</span>
+            </button>
+          )}
+          {shown.map(({ p, color, entries, current, over }) => {
+            const info = current ? STATUS_INFO[current.status] : null;
+            return (
+              <button
+                key={p._id}
+                type="button"
+                role="option"
+                aria-selected={activeId === p._id}
+                className={`pt-prow-btn${activeId === p._id ? ' on' : ''}`}
+                onClick={() => pick(p._id)}
+                title={`${p.name}${current ? ` · ${current.status}` : ''}`}
+              >
+                <span className="pt-sw" style={{ background: color }} />
+                <span className="pt-prow-name">{p.name}</span>
+                {info ? (
+                  <span className={`pt-prow-stage${over ? ' over' : ''}`} style={{ background: info.color, color: textOn(info.color) }}>{info.short}</span>
+                ) : (
+                  <span className="pt-prow-stage idle">{entries.length ? 'Done' : 'No dates'}</span>
+                )}
+              </button>
+            );
+          })}
+          {shown.length === 0 && <div className="pt-picker-none">No project matches “{q}”.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Legend({ projects, projectEntriesById, activeId, onPick, statusFilter, onToggleStatus, onClearStatus, counts, mode, accent }) {
   const filtering = statusFilter.size > 0;
   return (
     <div className="pt-legend">
-      <div className="pt-legend-group">
-        {projects.map((p, pi) => {
-          const color = /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : PRESETS[pi % PRESETS.length];
-          const on = activeId === p._id;
-          return (
-            <button
-              key={p._id}
-              type="button"
-              className={`pt-lchip${on ? ' on' : ''}`}
-              onClick={() => onPick(on ? 'all' : p._id)}
-              title={on ? 'Click to show all projects again' : 'Click to view only this project'}
-            >
-              <span className="pt-sw" style={{ background: color }} />
-              {p.name}
-              {!projectEntriesById.get(p._id) && <em> · no dates</em>}
-            </button>
-          );
-        })}
-      </div>
+      <ProjectPicker projects={projects} entriesById={projectEntriesById} activeId={activeId} onPick={onPick} />
 
       <div className="pt-legend-group pt-statuses" role="group" aria-label="Filter by status">
         <span className="pt-legend-label">Status</span>
