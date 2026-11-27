@@ -8,8 +8,8 @@ export function newItemId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-export function newItem(text = '') {
-  return { id: newItemId(), text, done: false, check1: false, check2: false, children: [] };
+export function newItem(text = '', extra = {}) {
+  return { id: newItemId(), text, done: false, check1: false, check2: false, children: [], ...extra };
 }
 
 // Deep copy with fresh ids and every box unticked — what a task gets when
@@ -21,6 +21,8 @@ export function cloneFresh(items = []) {
     done: false,
     check1: false,
     check2: false,
+    ...(it.image ? { image: { ...it.image } } : {}),
+    ...(it.link ? { link: { ...it.link } } : {}),
     children: cloneFresh(it.children || []),
   }));
 }
@@ -214,12 +216,13 @@ export function outdentItem(items, id) {
 }
 
 // Blank items are dropped on save so an accidental extra Enter doesn't
-// leave empty checkboxes behind (a blank parent with filled-in children
-// is kept, since removing it would lose them).
+// leave empty checkboxes behind. An item with no text is still kept when it
+// has a picture or a link, or has filled-in children (removing it would lose
+// them).
 export function pruneEmpty(items = []) {
   return items
     .map((it) => ({ ...it, text: (it.text || '').trim(), children: pruneEmpty(it.children || []) }))
-    .filter((it) => it.text || it.children.length);
+    .filter((it) => it.text || it.image || it.link || it.children.length);
 }
 
 // Adds https:// when someone types "example.com" so the link actually
@@ -251,4 +254,115 @@ export function ancestorIds(items = [], id, trail = []) {
     if (found) return found;
   }
   return null;
+}
+
+// --- Pictures and links on an item -----------------------------------------
+// An item can carry, besides its text:
+//   image: { fileId, name, url, mimeType, kind, size }   a picture from the file repository
+//   link:  { type: 'url',  href, label? }                 a web / mailto / tel link
+//          { type: 'repo', q?, kind?, fileId?, label? }   opens the File repository,
+//                                                        filtered by name, kind or one file
+
+// Sets fields on one item. A null/undefined value removes that field.
+export function patchItem(items, id, patch) {
+  return items.map((it) => {
+    if (it.id !== id) return { ...it, children: patchItem(it.children || [], id, patch) };
+    const next = { ...it, ...patch };
+    for (const k of Object.keys(patch)) if (patch[k] == null) delete next[k];
+    return next;
+  });
+}
+
+export function findItem(items = [], id) {
+  for (const it of items) {
+    if (it.id === id) return it;
+    const hit = findItem(it.children || [], id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// Only these schemes become clickable — a pasted "javascript:..." never does.
+const SAFE_HREF = /^(https?:|mailto:|tel:)/i;
+export function safeHref(href) {
+  const v = String(href || '').trim();
+  return SAFE_HREF.test(v) ? v : '';
+}
+
+export const REPO_KINDS = [
+  ['', 'All files'],
+  ['image', 'Pictures'],
+  ['document', 'Documents'],
+  ['video', 'Video'],
+  ['audio', 'Audio'],
+  ['other', 'Other'],
+];
+
+// /files?q=…&kind=…&file=… — the File repository page reads these three.
+export function repoPath({ q, kind, fileId } = {}) {
+  const p = new URLSearchParams();
+  if (q && q.trim()) p.set('q', q.trim());
+  if (kind) p.set('kind', kind);
+  if (fileId) p.set('file', fileId);
+  const s = p.toString();
+  return `/files${s ? `?${s}` : ''}`;
+}
+
+// Where a link goes: an in-app path for repository links, a safe external
+// URL for web links, '' when the link isn't usable.
+export function linkTarget(link) {
+  if (!link) return '';
+  return link.type === 'repo' ? repoPath(link) : safeHref(link.href);
+}
+
+export function linkLabel(link) {
+  if (!link) return '';
+  if ((link.label || '').trim()) return link.label.trim();
+  if (link.type === 'repo') {
+    const kindName = REPO_KINDS.find(([k]) => k === link.kind)?.[1];
+    const parts = [link.q, link.kind ? kindName : ''].filter(Boolean);
+    return parts.length ? `File repository: ${parts.join(' · ')}` : 'File repository';
+  }
+  try {
+    const u = new URL(link.href);
+    const path = u.pathname && u.pathname !== '/' ? u.pathname : '';
+    return u.protocol.startsWith('http') ? u.hostname.replace(/^www\./, '') + path : link.href;
+  } catch {
+    return link.href || '';
+  }
+}
+
+// --- Drag-and-drop ordering -------------------------------------------------
+
+// Moves item `dragId` (with everything under it) to sit just before/after
+// item `targetId`, at whatever depth the target lives. Dropping an item onto
+// itself, or into its own sub-items, changes nothing.
+export function moveItem(items, dragId, targetId, pos = 'before') {
+  if (dragId === targetId) return items;
+  const dragged = findItem(items, dragId);
+  if (!dragged || findItem(dragged.children || [], targetId)) return items;
+  const without = removeItem(items, dragId);
+  const place = (list) => {
+    const idx = list.findIndex((it) => it.id === targetId);
+    if (idx !== -1) {
+      const next = [...list];
+      next.splice(pos === 'after' ? idx + 1 : idx, 0, dragged);
+      return next;
+    }
+    return list.map((it) => ({ ...it, children: place(it.children || []) }));
+  };
+  return place(without);
+}
+
+// Swaps an item with the sibling above (dir = -1) or below (dir = 1).
+export function shiftItem(items, id, dir) {
+  const idx = items.findIndex((it) => it.id === id);
+  if (idx !== -1) {
+    const to = idx + dir;
+    if (to < 0 || to >= items.length) return items;
+    const next = [...items];
+    [next[idx], next[to]] = [next[to], next[idx]];
+    return next;
+  }
+  return items.map((it) => ({ ...it, children: shiftItem(it.children || [], id, dir) }));
 }

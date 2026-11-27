@@ -6,7 +6,9 @@ import crypto from 'node:crypto';
 import { requireAuth, resolveViewer, requireOwnWrite, requireModuleShared } from '../middleware/auth.js';
 import FileAsset from '../models/FileAsset.js';
 import Task from '../models/Task.js';
+import TaskInstance from '../models/TaskInstance.js';
 import { UPLOAD_DIR } from './media.js';
+import { rewriteImages, dropImage, renameImage } from '../utils/checklistImages.js';
 
 // File repository: any file type, stored next to the media uploads and
 // served from /uploads (app.js forces non-media types to download rather
@@ -42,6 +44,18 @@ function kindOf(mime = '') {
     /(word|excel|sheet|powerpoint|presentation|opendocument|rtf|csv|json)/i.test(mime)
   ) return 'document';
   return 'other';
+}
+
+// Pictures on checklist items (tasks and task instances) keep a copy of the
+// file's name/url, so a rename or delete here has to reach into those lists.
+async function updateChecklistImages(ownerId, fileId, fn) {
+  for (const Model of [Task, TaskInstance]) {
+    const docs = await Model.find({ owner: ownerId, 'checklist.0': { $exists: true } }, 'checklist').lean();
+    for (const d of docs) {
+      const { items, changed } = rewriteImages(d.checklist, fileId, fn);
+      if (changed) await Model.updateOne({ _id: d._id }, { $set: { checklist: items } }, { timestamps: false });
+    }
+  }
 }
 
 const router = Router();
@@ -87,6 +101,7 @@ router.put('/:id', requireOwnWrite, async (req, res) => {
     { $set: { 'attachments.$[a].name': name } },
     { arrayFilters: [{ 'a.fileId': String(asset._id) }] }
   );
+  await updateChecklistImages(req.ownerId, String(asset._id), renameImage(name));
   res.json(asset);
 });
 
@@ -99,6 +114,7 @@ router.delete('/:id', requireOwnWrite, async (req, res) => {
     { owner: req.ownerId, 'attachments.fileId': String(asset._id) },
     { $pull: { attachments: { fileId: String(asset._id) } } }
   );
+  await updateChecklistImages(req.ownerId, String(asset._id), dropImage);
   res.json({ ok: true });
 });
 

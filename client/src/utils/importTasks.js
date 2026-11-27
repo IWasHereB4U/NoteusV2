@@ -7,12 +7,13 @@
 //       free-text note lines          <- indented, no box
 //       [x] checklist item            <- 4 spaces per nesting level
 //           [ ] sub-item
+//       [x] item  {image: a.png} {link: https://…}   <- optional picture / link on an item
 //       [x][ ] item                   <- two boxes = "needs verification" task
 //       Macros: a, b                  <- names only; macro steps aren't in the file
 //
 // parseTasksText() turns the text into task objects, planImport() decides which
 // are new and which overwrite an existing task of the same title.
-import { newItemId, pruneEmpty } from '../components/tasks/checklist.js';
+import { newItemId, pruneEmpty, safeHref } from '../components/tasks/checklist.js';
 
 const UNDERLINE = /^-{3,}$/;
 const TASK_LINE = /^\[([ xX])\]\s(.*)$/;
@@ -21,6 +22,51 @@ const META = /^(.*?)\s{2}\((?:(low|normal|high)(?:, )?)?(?:due (\d{4}-\d{2}-\d{2
 const GENERAL = 'GENERAL (NO CLIENT)';
 
 const isX = (c) => String(c || '').toLowerCase() === 'x';
+
+// {image: name} / {link: address} written after an item's text by the export.
+const MARK = /\s*\{(image|link): ([^}]*)\}/g;
+function splitMarks(raw) {
+  const marks = {};
+  const text = String(raw || '').replace(MARK, (_, k, v) => { marks[k] = v.trim(); return ''; }).trim();
+  return { text, marks };
+}
+
+function linkFromMark(value) {
+  if (!value) return null;
+  const v = value;
+  if (v.startsWith('/files')) {
+    const p = new URLSearchParams(v.split('?')[1] || '');
+    const link = { type: 'repo' };
+    if (p.get('q')) link.q = p.get('q');
+    if (p.get('kind')) link.kind = p.get('kind');
+    if (p.get('file')) link.fileId = p.get('file');
+    return link;
+  }
+  const href = safeHref(v);
+  return href ? { type: 'url', href } : null;
+}
+
+// A picture can't travel in a .txt, only its file name. These put the real
+// picture back by finding an item in the current tasks that uses that name;
+// a name that matches nothing just drops the picture.
+function imagePool(tasks) {
+  const pool = new Map();
+  const walk = (items) => items.forEach((it) => {
+    if (it.image?.fileId && it.image.name && !pool.has(it.image.name)) pool.set(it.image.name, it.image);
+    walk(it.children || []);
+  });
+  tasks.forEach((t) => walk(t.checklist || []));
+  return pool;
+}
+
+function resolveImages(items, pool) {
+  return items.map((it) => {
+    const { image, ...rest } = it;
+    const children = resolveImages(it.children || [], pool);
+    const real = image && (image.fileId ? image : pool.get(image.name));
+    return real ? { ...rest, image: { ...real }, children } : { ...rest, children };
+  });
+}
 
 // A parent reads as done exactly when all of its children are (same rule the
 // checklist uses when you tick boxes in the app).
@@ -75,14 +121,18 @@ export function parseTasksText(raw) {
     if (bm) {
       const verify = bm[2] !== undefined;
       if (verify) cur.verify = true;
+      const { text: itemText, marks } = splitMarks(bm[3]);
       const item = {
         id: newItemId(),
-        text: bm[3] === '(empty item)' ? '' : bm[3],
+        text: itemText === '(empty item)' ? '' : itemText,
         done: verify ? isX(bm[1]) && isX(bm[2]) : isX(bm[1]),
         check1: verify ? isX(bm[1]) : false,
         check2: verify ? isX(bm[2]) : false,
         children: [],
       };
+      if (marks.image) item.image = { name: marks.image }; // resolved in planImport
+      const link = linkFromMark(marks.link);
+      if (link) item.link = link;
       const depth = Math.min(Math.max(0, Math.floor(indent / 4) - 1), stack.length);
       stack.length = depth;
       (depth === 0 ? cur.checklist : stack[depth - 1].children).push(item);
@@ -124,6 +174,7 @@ export function planImport(parsed, existing, clients) {
     byTitle.set(norm(t.title), t);
   }
   const clientByName = new Map(clients.map((c) => [norm(c.name), c._id]));
+  const pool = imagePool(existing);
   const creates = [];
   const updates = [];
   const unmatchedClients = new Set();
@@ -136,7 +187,7 @@ export function planImport(parsed, existing, clients) {
       priority: t.priority,
       due: t.due,
       note: t.note,
-      checklist: t.checklist,
+      checklist: pruneEmpty(resolveImages(t.checklist, pool)),
       needsVerification: t.needsVerification,
     };
     const label = (t.groupLabel || '').trim();

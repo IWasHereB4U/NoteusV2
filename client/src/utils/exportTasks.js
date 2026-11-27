@@ -2,7 +2,20 @@
 // screen. Ticks are [x] / [ ] and nesting is 4 spaces per level, so the file
 // reads fine in any editor and survives being pasted into email or chat.
 
+import { linkTarget } from '../components/tasks/checklist.js';
+
 const INDENT = '    ';
+
+// Pictures and links on a checklist item ride along as {image: name} and
+// {link: address} after the text, so they show in the file and Import can
+// put them back. (Repository links are written as /files?q=…&kind=…&file=….)
+function itemMarks(it) {
+  const marks = [];
+  if (it.image?.name) marks.push(`{image: ${String(it.image.name).replace(/[{}\r\n]/g, ' ').trim()}}`);
+  const target = linkTarget(it.link);
+  if (target) marks.push(`{link: ${target.replace(/[\s{}]/g, (c) => encodeURIComponent(c))}}`);
+  return marks;
+}
 
 function checklistLines(items = [], depth = 1, verify = false) {
   const lines = [];
@@ -12,7 +25,8 @@ function checklistLines(items = [], depth = 1, verify = false) {
     const box = verify
       ? `[${it.check1 ? 'x' : ' '}][${it.check2 ? 'x' : ' '}]`
       : `[${it.done ? 'x' : ' '}]`;
-    lines.push(`${INDENT.repeat(depth)}${box} ${text}`);
+    const marks = itemMarks(it);
+    lines.push(`${INDENT.repeat(depth)}${box} ${text}${marks.length ? `  ${marks.join(' ')}` : ''}`);
     lines.push(...checklistLines(it.children || [], depth + 1, verify));
   }
   return lines;

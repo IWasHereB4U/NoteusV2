@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { filesApi, fmtSize, KIND_ICON, fileSrc } from '../../api/files.js';
 
 // Choose one or more files already in the file repository. Calls
-// onPick(files[]) with the chosen repository entries.
-export function FilePickerModal({ onPick, onClose, imagesOnly = false, excludeIds = [] }) {
+// onPick(files[]) with the chosen repository entries. `single` allows just one;
+// `title` / `actionLabel` reword the dialog for other uses (e.g. linking).
+export function FilePickerModal({ onPick, onClose, imagesOnly = false, excludeIds = [], single = false, title, actionLabel = 'Attach' }) {
   const { viewingId } = useAuth();
   const [files, setFiles] = useState(null);
   const [error, setError] = useState('');
@@ -28,14 +29,15 @@ export function FilePickerModal({ onPick, onClose, imagesOnly = false, excludeId
 
   const toggle = (id) =>
     setChosen((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
+      const n = new Set(single ? [] : s);
+      if (s.has(id)) n.delete(id);
+      else n.add(id);
       return n;
     });
 
   return (
     <Modal
-      title={imagesOnly ? 'Pick a picture from the repository' : 'Pick from the file repository'}
+      title={title || (imagesOnly ? 'Pick a picture from the repository' : 'Pick from the file repository')}
       onClose={onClose}
       width={620}
       footer={
@@ -47,7 +49,7 @@ export function FilePickerModal({ onPick, onClose, imagesOnly = false, excludeId
             disabled={!chosen.size}
             onClick={() => { onPick((files || []).filter((f) => chosen.has(String(f._id)))); onClose(); }}
           >
-            Attach{chosen.size ? ` ${chosen.size}` : ''}
+            {actionLabel}{chosen.size > 1 ? ` ${chosen.size}` : ''}
           </button>
         </>
       }

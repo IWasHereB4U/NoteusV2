@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useResource } from '../hooks/useResource.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { filesApi, fmtSize, fileSrc, fileDownload, KIND_ICON } from '../api/files.js';
@@ -12,13 +13,39 @@ const KINDS = [
   ['other', 'Other'],
 ];
 
+// Every repository file used by a checklist (pictures on items), at any depth.
+function checklistFileIds(items = [], out = new Set()) {
+  for (const it of items) {
+    if (it.image?.fileId) out.add(String(it.image.fileId));
+    checklistFileIds(it.children || [], out);
+  }
+  return out;
+}
+
 export function Files() {
   const { items, loading, reload, viewingId } = useResource('/files');
   // Used only to say which tasks a file is attached to (empty if tasks aren't shared with you).
   const { items: tasks, reload: reloadTasks } = useResource('/tasks');
   const { viewingSelf } = useAuth();
-  const [q, setQ] = useState('');
-  const [kind, setKind] = useState('all');
+  // The filter lives in the URL (?q=name&kind=image&file=<id>) so a link from a
+  // task's checklist can open the repository already filtered.
+  const [params, setParams] = useSearchParams();
+  const q = params.get('q') || '';
+  const kindParam = params.get('kind') || 'all';
+  const kind = KINDS.some(([k]) => k === kindParam) ? kindParam : 'all';
+  const fileId = params.get('file') || '';
+  function setFilter(patch) {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v && v !== 'all') next.set(k, v);
+        else next.delete(k);
+      }
+      return next;
+    }, { replace: true });
+  }
+  const setQ = (v) => setFilter({ q: v, file: '' });
+  const setKind = (v) => setFilter({ kind: v, file: '' });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [over, setOver] = useState(false);
@@ -28,18 +55,22 @@ export function Files() {
   const usage = useMemo(() => {
     const m = new Map();
     for (const t of tasks) {
-      for (const a of t.attachments || []) {
-        if (!m.has(a.fileId)) m.set(a.fileId, []);
-        m.get(a.fileId).push(t.title);
+      const ids = new Set((t.attachments || []).map((a) => String(a.fileId)));
+      checklistFileIds(t.checklist || [], ids);
+      for (const id of ids) {
+        if (!m.has(id)) m.set(id, []);
+        m.get(id).push(t.title);
       }
     }
     return m;
   }, [tasks]);
 
   const shown = useMemo(() => {
+    // A link to one particular file shows just that file.
+    if (fileId) return items.filter((f) => String(f._id) === fileId);
     const needle = q.trim().toLowerCase();
     return items.filter((f) => (kind === 'all' || f.kind === kind) && (!needle || f.originalName.toLowerCase().includes(needle)));
-  }, [items, q, kind]);
+  }, [items, q, kind, fileId]);
 
   const totalSize = useMemo(() => items.reduce((s, f) => s + (f.size || 0), 0), [items]);
 
@@ -100,6 +131,15 @@ export function Files() {
 
       {error && <div className="auth-error">{error}</div>}
 
+      {fileId && (
+        <div className="files-linkbar">
+          <span>
+            {loading ? 'Loading…' : shown.length ? 'Showing the one file this link points to.' : 'The file this link points to is no longer in the repository.'}
+          </span>
+          <button className="btn ghost sm" onClick={() => setFilter({ file: '' })}>Show all files</button>
+        </div>
+      )}
+
       {viewingSelf && (
         <div
           className={`file-drop${over ? ' over' : ''}`}
@@ -117,7 +157,7 @@ export function Files() {
           <button key={k} className={`btn sm ${kind === k ? '' : 'ghost'}`} onClick={() => setKind(k)}>{label}</button>
         ))}
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink3)' }}>
-          {items.length} file{items.length === 1 ? '' : 's'} · {fmtSize(totalSize)}
+          {shown.length !== items.length && `${shown.length} shown of `}{items.length} file{items.length === 1 ? '' : 's'} · {fmtSize(totalSize)}
         </span>
       </div>
 
@@ -125,6 +165,9 @@ export function Files() {
         {shown.length === 0 ? (
           <div className="empty">
             <b>{loading ? 'Loading…' : items.length ? 'No files match' : 'No files yet'}</b>
+            {!loading && items.length > 0 && (q || kind !== 'all' || fileId) && (
+              <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setFilter({ q: '', kind: '', file: '' })}>Clear filters</button>
+            )}
             {!loading && !items.length && 'Upload a picture or document to keep it here and attach it to tasks.'}
           </div>
         ) : (
